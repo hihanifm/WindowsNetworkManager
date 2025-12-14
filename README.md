@@ -61,7 +61,7 @@ build.bat
 3. Navigate to the project directory
 4. Run: `.\WindowsNetworkManager.exe`
 
-The web interface will be available at: **http://localhost:8080**
+The web interface will be available at: **http://localhost:18080**
 
 ### 5. Run as Windows Service (Auto-start on Boot) ⭐ NEW
 
@@ -117,7 +117,7 @@ WindowsNetworkManager.exe -service uninstall
 - **Configure startup type:** The service is set to start automatically by default
 - **View logs:** Service logs are written to Windows Event Log (use Event Viewer)
 
-**Note:** The service runs in the background and starts automatically on boot. The web interface remains available at http://localhost:8080 even when running as a service.
+**Note:** The service runs in the background and starts automatically on boot. The web interface remains available at http://localhost:18080 even when running as a service.
 
 ## Network Access (Access from Other Devices) 🌐
 
@@ -127,25 +127,25 @@ The web interface is accessible from other devices on the same network (WiFi/LAN
 2. **Find your PC's IP address:**
    - Check the console/event log when the application starts - it will display network-accessible URLs
    - Or use: `ipconfig` in Command Prompt and look for "IPv4 Address"
-   - Or access the API: `http://localhost:8080/api/network` to get IP addresses
+   - Or access the API: `http://localhost:18080/api/network` to get IP addresses
 
 3. **Access from other devices:**
-   - From another PC/phone/tablet on the same network, open: `http://<PC_IP_ADDRESS>:8080`
-   - Example: If your PC's IP is `192.168.1.100`, use `http://192.168.1.100:8080`
+   - From another PC/phone/tablet on the same network, open: `http://<PC_IP_ADDRESS>:18080`
+   - Example: If your PC's IP is `192.168.1.100`, use `http://192.168.1.100:18080`
 
 4. **Windows Firewall Configuration:**
    - Windows may prompt you to allow the connection when first accessed
-   - Or manually allow port 8080 in Windows Firewall:
+   - Or manually allow port 18080 in Windows Firewall:
      - Open Windows Defender Firewall → Advanced Settings
      - Inbound Rules → New Rule
-     - Port → TCP → 8080 → Allow connection
+     - Port → TCP → 18080 → Allow connection
      - Apply to all profiles
 
 ## Usage
 
 1. **Open the web interface** in your browser: 
-   - **Local access:** http://localhost:8080
-   - **Network access:** http://<PC_IP_ADDRESS>:8080 (from other devices)
+   - **Local access:** http://localhost:18080
+   - **Network access:** http://<PC_IP_ADDRESS>:18080 (from other devices)
 2. **Set the desired delay** in milliseconds (0-10000)
 3. **Click "Start"** to begin intercepting and delaying packets
 4. **Monitor statistics** in real-time
@@ -240,11 +240,11 @@ The application uses the `github.com/deblasis/godivert` library, which provides 
 
 ### Cannot access web interface from other devices
 
-- **Check Windows Firewall:** Ensure port 8080 is allowed for incoming connections
+- **Check Windows Firewall:** Ensure port 18080 is allowed for incoming connections
 - **Verify IP address:** Make sure you're using the correct IP address (check console output or `/api/network` endpoint)
 - **Network connectivity:** Ensure devices are on the same network (same WiFi/LAN)
 - **Firewall on other devices:** Check if other devices' firewalls are blocking the connection
-- **Try localhost first:** Verify the interface works at `http://localhost:8080` on the host PC
+- **Try localhost first:** Verify the interface works at `http://localhost:18080` on the host PC
 
 ## Security Notes
 

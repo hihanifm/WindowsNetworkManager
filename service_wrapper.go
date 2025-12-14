@@ -84,7 +84,7 @@ func (p *program) run() {
 	fs := http.FileServer(http.Dir("./web/static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 	
-	port := "8080"
+	port := "18080"
 	bindAddr := "0.0.0.0:" + port
 	serviceLogger.Infof("Starting web server on http://localhost:%s", port)
 	

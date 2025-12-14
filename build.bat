@@ -25,7 +25,7 @@ if %ERRORLEVEL% EQU 0 (
     echo   WindowsNetworkManager.exe
     echo.
     echo The web interface will be available at:
-    echo   http://localhost:8080
+    echo   http://localhost:18080
     echo.
 ) else (
     echo.

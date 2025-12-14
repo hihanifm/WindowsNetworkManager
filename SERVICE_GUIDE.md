@@ -82,7 +82,7 @@ Service logs are written to Windows Event Log:
 - Try starting manually: `net start WindowsNetworkManager`
 
 ### Service starts but web interface not accessible
-- Check that port 8080 is not blocked by firewall
+- Check that port 18080 is not blocked by firewall
 - Verify the service is actually running: `sc query WindowsNetworkManager`
 - Check Event Viewer logs for HTTP server errors
 
@@ -104,7 +104,7 @@ The application will work the same way, but won't start automatically on boot.
 ## Notes
 
 - The service runs with Local System account privileges (required for WinDivert)
-- The web interface is always available at http://localhost:8080
+- The web interface is always available at http://localhost:18080
 - Service runs in the background - no console window
 - You can still access the web interface to control packet interception
 

@@ -36,11 +36,11 @@ build.bat
 ### 5. Access Web Interface
 
 **Local Access:**
-Open your browser and navigate to: **http://localhost:8080**
+Open your browser and navigate to: **http://localhost:18080**
 
 **Network Access (from other devices):**
 1. Find your PC's IP address (check console output when app starts, or use `ipconfig`)
-2. From another device on the same WiFi/LAN, open: `http://<PC_IP>:8080`
+2. From another device on the same WiFi/LAN, open: `http://<PC_IP>:18080`
 3. **Configure Firewall:** Run `configure_firewall.bat` as Administrator to allow network access
 
 ### 6. Configure Firewall for Network Access 🌐
@@ -54,7 +54,7 @@ To allow other devices on your network to access the web interface:
 
 **Manual Setup:**
 - Open Windows Defender Firewall → Advanced Settings
-- Inbound Rules → New Rule → Port → TCP → 8080 → Allow
+- Inbound Rules → New Rule → Port → TCP → 18080 → Allow
 
 ### 7. Install as Windows Service (Auto-start on Boot) ⭐ NEW
 
@@ -108,7 +108,7 @@ WindowsNetworkManager.exe -service uninstall
 
 ### Application won't start
 - **Solution**: Check Windows Firewall isn't blocking the application
-- **Solution**: Verify port 8080 is not in use by another application
+- **Solution**: Verify port 18080 is not in use by another application
 - **Solution**: Check console output for specific error messages
 
 ### Packets not being delayed
@@ -125,10 +125,10 @@ WindowsNetworkManager.exe -service uninstall
 - **Solution**: Check service logs in Event Viewer → Windows Logs → Application
 
 ### Cannot access from other devices on network
-- **Solution**: Run `configure_firewall.bat` as Administrator to open port 8080
+- **Solution**: Run `configure_firewall.bat` as Administrator to open port 18080
 - **Solution**: Verify devices are on the same network (same WiFi/LAN)
 - **Solution**: Check the console output for your PC's IP address
-- **Solution**: Try accessing `http://localhost:8080` on the host PC first to verify it works
+- **Solution**: Try accessing `http://localhost:18080` on the host PC first to verify it works
 - **Solution**: Check Windows Firewall settings manually if the script doesn't work
 
 ## API Compatibility Notes

@@ -47,7 +47,7 @@ type StatsResponse struct {
 
 func main() {
 	// Command line flags
-	port := flag.String("port", "8080", "Web server port (ignored in service mode)")
+	port := flag.String("port", "18080", "Web server port (ignored in service mode)")
 	svcFlag := flag.String("service", "", "Service command: install, uninstall, start, stop, restart")
 	flag.Parse()
 
@@ -334,7 +334,7 @@ func handleNetwork(w http.ResponseWriter, r *http.Request) {
 	localIPs := getLocalIPs()
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"local_ips": localIPs,
-		"port":      "8080",
+		"port":      "18080",
 	})
 }
 
