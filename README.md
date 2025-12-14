@@ -10,6 +10,7 @@ A Windows application with a web interface that monitors network traffic and add
 - 🚀 User-mode implementation (no kernel driver required)
 - ⚡ Start/Stop packet interception on demand
 - 🔄 Dynamic delay adjustment while running
+- 🔧 Windows Service support - runs automatically on boot
 
 ## Prerequisites
 
@@ -61,6 +62,62 @@ build.bat
 
 The web interface will be available at: **http://localhost:8080**
 
+### 5. Run as Windows Service (Auto-start on Boot) ⭐ NEW
+
+To run the application automatically when Windows boots:
+
+#### Option A: Using Installation Scripts (Recommended)
+
+1. **Install the service:**
+   - Right-click `install_service.bat`
+   - Select "Run as Administrator"
+   - The service will be installed and set to start automatically on boot
+
+2. **Start the service:**
+   ```bash
+   net start WindowsNetworkManager
+   ```
+   Or use: `WindowsNetworkManager.exe -service start`
+
+3. **Stop the service:**
+   ```bash
+   net stop WindowsNetworkManager
+   ```
+   Or use: `WindowsNetworkManager.exe -service stop`
+
+4. **Uninstall the service:**
+   - Right-click `uninstall_service.bat`
+   - Select "Run as Administrator"
+
+#### Option B: Manual Installation
+
+```bash
+# Install service (run as Administrator)
+WindowsNetworkManager.exe -service install
+
+# Start service
+WindowsNetworkManager.exe -service start
+# Or: net start WindowsNetworkManager
+
+# Stop service
+WindowsNetworkManager.exe -service stop
+# Or: net stop WindowsNetworkManager
+
+# Restart service
+WindowsNetworkManager.exe -service restart
+
+# Uninstall service
+WindowsNetworkManager.exe -service uninstall
+```
+
+#### Service Management
+
+- **View service status:** Open Services (`services.msc`) and look for "Windows Network Manager"
+- **Configure startup type:** The service is set to start automatically by default
+- **View logs:** Service logs are written to Windows Event Log (use Event Viewer)
+
+**Note:** The service runs in the background and starts automatically on boot. The web interface remains available at http://localhost:8080 even when running as a service.
+
 ## Usage
 
 1. **Open the web interface** in your browser: http://localhost:8080
@@ -83,15 +140,18 @@ The application uses WinDivert to intercept network packets at the user-mode lev
 
 ```
 WindowsNetworkManager/
-├── main.go              # HTTP server and API endpoints
-├── packet_delay.go      # WinDivert packet interception engine
+├── main.go                  # HTTP server and API endpoints
+├── packet_delay.go          # WinDivert packet interception engine
+├── service_wrapper.go       # Windows Service wrapper
 ├── web/
-│   ├── index.html       # Web interface
+│   ├── index.html           # Web interface
 │   └── static/
-│       └── app.js       # Frontend JavaScript
-├── go.mod               # Go dependencies
-├── build.bat            # Build script
-└── README.md            # This file
+│       └── app.js           # Frontend JavaScript
+├── go.mod                   # Go dependencies
+├── build.bat                # Build script
+├── install_service.bat      # Service installation script
+├── uninstall_service.bat    # Service uninstallation script
+└── README.md                # This file
 ```
 
 ## API Endpoints
@@ -137,6 +197,14 @@ The application uses the `github.com/deblasis/godivert` library, which provides 
 
 - The application MUST run with Administrator privileges
 - Right-click the executable and select "Run as Administrator"
+- When installing as a service, ensure you run the install script as Administrator
+
+### Service won't start
+
+- Verify the service was installed correctly: `sc query WindowsNetworkManager`
+- Check Windows Event Viewer for error messages
+- Ensure WinDivert DLL is in the same directory as the executable
+- Try starting the service manually: `net start WindowsNetworkManager`
 
 ### Packets not being delayed
 

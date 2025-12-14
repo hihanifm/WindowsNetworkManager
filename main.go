@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/kardianos/service"
 )
 
 var (
@@ -41,8 +45,101 @@ type StatsResponse struct {
 }
 
 func main() {
-	port := flag.String("port", "8080", "Web server port")
+	// Command line flags
+	port := flag.String("port", "8080", "Web server port (ignored in service mode)")
+	svcFlag := flag.String("service", "", "Service command: install, uninstall, start, stop, restart")
 	flag.Parse()
+
+	// Get executable path for service configuration
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("Failed to get executable path: %v", err)
+	}
+	exeDir := filepath.Dir(exePath)
+
+	// Service configuration
+	svcConfig := &service.Config{
+		Name:        "WindowsNetworkManager",
+		DisplayName: "Windows Network Manager",
+		Description: "Monitors network traffic and adds configurable latency to network packets",
+		Executable:  exePath,
+		WorkingDir:  exeDir,
+	}
+
+	// Create service
+	prg := &program{}
+	s, err := service.New(prg, svcConfig)
+	if err != nil {
+		log.Fatalf("Failed to create service: %v", err)
+	}
+
+	// Handle service commands
+	if len(*svcFlag) != 0 {
+		serviceLogger, err = s.Logger(nil)
+		if err != nil {
+			log.Fatalf("Failed to create service logger: %v", err)
+		}
+
+		switch *svcFlag {
+		case "install":
+			if err := s.Install(); err != nil {
+				log.Fatalf("Failed to install service: %v", err)
+			}
+			log.Println("Service installed successfully!")
+			log.Println("To start the service, run: WindowsNetworkManager.exe -service start")
+			log.Println("Or use: net start WindowsNetworkManager")
+			return
+		case "uninstall":
+			if err := s.Uninstall(); err != nil {
+				log.Fatalf("Failed to uninstall service: %v", err)
+			}
+			log.Println("Service uninstalled successfully!")
+			return
+		case "start":
+			if err := s.Start(); err != nil {
+				log.Fatalf("Failed to start service: %v", err)
+			}
+			log.Println("Service started successfully!")
+			return
+		case "stop":
+			if err := s.Stop(); err != nil {
+				log.Fatalf("Failed to stop service: %v", err)
+			}
+			log.Println("Service stopped successfully!")
+			return
+		case "restart":
+			if err := s.Restart(); err != nil {
+				log.Fatalf("Failed to restart service: %v", err)
+			}
+			log.Println("Service restarted successfully!")
+			return
+		default:
+			log.Fatalf("Unknown service command: %s. Use: install, uninstall, start, stop, restart", *svcFlag)
+		}
+		return
+	}
+
+	// Check if running as a service
+	isService, err := s.Status()
+	if err == nil && isService == service.StatusRunning {
+		// Running as service - use service logger
+		serviceLogger, err = s.Logger(nil)
+		if err != nil {
+			log.Fatalf("Failed to create service logger: %v", err)
+		}
+		
+		// Run as service
+		if err := s.Run(); err != nil {
+			serviceLogger.Error("Service run failed: ", err)
+		}
+		return
+	}
+
+	// Running in console mode (not as service)
+	// Get executable directory for web files
+	if err := os.Chdir(exeDir); err != nil {
+		log.Printf("Warning: Failed to change directory: %v", err)
+	}
 
 	// Initialize packet stats
 	packetStats.StartTime = time.Now()
@@ -60,6 +157,7 @@ func main() {
 
 	log.Printf("Starting web server on http://localhost:%s", *port)
 	log.Println("Note: This application requires Administrator privileges to intercept packets")
+	log.Println("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
 	
 	if err := http.ListenAndServe(":"+*port, nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

@@ -36,6 +36,45 @@ build.bat
 ### 5. Access Web Interface
 Open your browser and navigate to: **http://localhost:8080**
 
+### 6. Install as Windows Service (Auto-start on Boot) ⭐ NEW
+
+To make the application start automatically when Windows boots:
+
+**Quick Install:**
+1. Right-click `install_service.bat`
+2. Select "Run as Administrator"
+3. The service is now installed and will start on boot!
+
+**Manual Install:**
+```bash
+# Run as Administrator
+WindowsNetworkManager.exe -service install
+net start WindowsNetworkManager
+```
+
+**Service Commands:**
+```bash
+# Start service
+net start WindowsNetworkManager
+# Or: WindowsNetworkManager.exe -service start
+
+# Stop service
+net stop WindowsNetworkManager
+# Or: WindowsNetworkManager.exe -service stop
+
+# Restart service
+WindowsNetworkManager.exe -service restart
+
+# Uninstall service
+WindowsNetworkManager.exe -service uninstall
+# Or: Right-click uninstall_service.bat → Run as Administrator
+```
+
+**Verify Service:**
+- Open Services (`Win+R` → `services.msc`)
+- Look for "Windows Network Manager"
+- Check that it's set to "Automatic" startup type
+
 ## Troubleshooting
 
 ### "Failed to open WinDivert handle"
@@ -57,6 +96,13 @@ Open your browser and navigate to: **http://localhost:8080**
 - **Solution**: Ensure "Start" button was clicked and status shows "Running"
 - **Solution**: Check that you have outbound network traffic
 - **Solution**: Review console logs for error messages
+
+### Service won't start or install
+- **Solution**: Ensure you're running installation commands as Administrator
+- **Solution**: Check Windows Event Viewer for service errors
+- **Solution**: Verify `WinDivert.dll` is in the same directory as the executable
+- **Solution**: Try: `sc query WindowsNetworkManager` to check service status
+- **Solution**: Check service logs in Event Viewer → Windows Logs → Application
 
 ## API Compatibility Notes
 
