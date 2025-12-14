@@ -34,9 +34,29 @@ build.bat
    ```
 
 ### 5. Access Web Interface
+
+**Local Access:**
 Open your browser and navigate to: **http://localhost:8080**
 
-### 6. Install as Windows Service (Auto-start on Boot) ⭐ NEW
+**Network Access (from other devices):**
+1. Find your PC's IP address (check console output when app starts, or use `ipconfig`)
+2. From another device on the same WiFi/LAN, open: `http://<PC_IP>:8080`
+3. **Configure Firewall:** Run `configure_firewall.bat` as Administrator to allow network access
+
+### 6. Configure Firewall for Network Access 🌐
+
+To allow other devices on your network to access the web interface:
+
+**Quick Setup:**
+1. Right-click `configure_firewall.bat`
+2. Select "Run as Administrator"
+3. Firewall rule will be added automatically
+
+**Manual Setup:**
+- Open Windows Defender Firewall → Advanced Settings
+- Inbound Rules → New Rule → Port → TCP → 8080 → Allow
+
+### 7. Install as Windows Service (Auto-start on Boot) ⭐ NEW
 
 To make the application start automatically when Windows boots:
 
@@ -103,6 +123,13 @@ WindowsNetworkManager.exe -service uninstall
 - **Solution**: Verify `WinDivert.dll` is in the same directory as the executable
 - **Solution**: Try: `sc query WindowsNetworkManager` to check service status
 - **Solution**: Check service logs in Event Viewer → Windows Logs → Application
+
+### Cannot access from other devices on network
+- **Solution**: Run `configure_firewall.bat` as Administrator to open port 8080
+- **Solution**: Verify devices are on the same network (same WiFi/LAN)
+- **Solution**: Check the console output for your PC's IP address
+- **Solution**: Try accessing `http://localhost:8080` on the host PC first to verify it works
+- **Solution**: Check Windows Firewall settings manually if the script doesn't work
 
 ## API Compatibility Notes
 

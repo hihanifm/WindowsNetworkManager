@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -77,17 +78,32 @@ func (p *program) run() {
 	http.HandleFunc("/api/stats", handleStats)
 	http.HandleFunc("/api/start", handleStart)
 	http.HandleFunc("/api/stop", handleStop)
+	http.HandleFunc("/api/network", handleNetwork)
 	
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 	
 	port := "8080"
+	bindAddr := "0.0.0.0:" + port
 	serviceLogger.Infof("Starting web server on http://localhost:%s", port)
+	
+	// Get and display local IP addresses for network access
+	localIPs := getLocalIPs()
+	if len(localIPs) > 0 {
+		serviceLogger.Info("Web interface accessible from network at:")
+		for _, ip := range localIPs {
+			serviceLogger.Infof("  http://%s:%s", ip, port)
+		}
+	} else {
+		serviceLogger.Info("Note: Could not detect local IP addresses for network access")
+	}
+	
 	serviceLogger.Info("Note: This application requires Administrator privileges to intercept packets")
+	serviceLogger.Infof("Note: Windows Firewall may need to allow incoming connections on port %s", port)
 	
 	httpServer = &http.Server{
-		Addr:    ":" + port,
+		Addr:    bindAddr,
 		Handler: nil,
 	}
 	

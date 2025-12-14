@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -150,16 +151,32 @@ func main() {
 	http.HandleFunc("/api/stats", handleStats)
 	http.HandleFunc("/api/start", handleStart)
 	http.HandleFunc("/api/stop", handleStop)
+	http.HandleFunc("/api/network", handleNetwork)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 
+	// Bind to all interfaces (0.0.0.0) to allow network access
+	bindAddr := "0.0.0.0:" + *port
 	log.Printf("Starting web server on http://localhost:%s", *port)
+	
+	// Get and display local IP addresses for network access
+	localIPs := getLocalIPs()
+	if len(localIPs) > 0 {
+		log.Println("Web interface accessible from network at:")
+		for _, ip := range localIPs {
+			log.Printf("  http://%s:%s", ip, *port)
+		}
+	} else {
+		log.Println("Note: Could not detect local IP addresses for network access")
+	}
+	
 	log.Println("Note: This application requires Administrator privileges to intercept packets")
+	log.Println("Note: Windows Firewall may need to allow incoming connections on port", *port)
 	log.Println("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
 	
-	if err := http.ListenAndServe(":"+*port, nil); err != nil {
+	if err := http.ListenAndServe(bindAddr, nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
@@ -311,11 +328,50 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleNetwork(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	localIPs := getLocalIPs()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"local_ips": localIPs,
+		"port":      "8080",
+	})
+}
+
 func updateStats(packets, bytes uint64) {
 	statsMutex.Lock()
 	packetStats.TotalPackets += packets
 	packetStats.DelayedPackets += packets
 	packetStats.BytesProcessed += bytes
 	statsMutex.Unlock()
+}
+
+// getLocalIPs returns a list of local IP addresses (excluding loopback)
+func getLocalIPs() []string {
+	var ips []string
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ips
+	}
+
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		
+		ip := ipNet.IP
+		// Skip loopback and link-local addresses
+		if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+			continue
+		}
+		
+		// Only include IPv4 addresses
+		if ip.To4() != nil {
+			ips = append(ips, ip.String())
+		}
+	}
+
+	return ips
 }
 

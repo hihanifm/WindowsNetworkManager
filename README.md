@@ -5,6 +5,7 @@ A Windows application with a web interface that monitors network traffic and add
 ## Features
 
 - 🌐 Web-based interface for easy configuration
+- 🌍 Network access - accessible from other devices on WiFi/LAN
 - ⏱️ Configurable packet delay (0-10000ms)
 - 📊 Real-time network statistics
 - 🚀 User-mode implementation (no kernel driver required)
@@ -118,9 +119,33 @@ WindowsNetworkManager.exe -service uninstall
 
 **Note:** The service runs in the background and starts automatically on boot. The web interface remains available at http://localhost:8080 even when running as a service.
 
+## Network Access (Access from Other Devices) 🌐
+
+The web interface is accessible from other devices on the same network (WiFi/LAN):
+
+1. **The server automatically binds to all network interfaces** (0.0.0.0)
+2. **Find your PC's IP address:**
+   - Check the console/event log when the application starts - it will display network-accessible URLs
+   - Or use: `ipconfig` in Command Prompt and look for "IPv4 Address"
+   - Or access the API: `http://localhost:8080/api/network` to get IP addresses
+
+3. **Access from other devices:**
+   - From another PC/phone/tablet on the same network, open: `http://<PC_IP_ADDRESS>:8080`
+   - Example: If your PC's IP is `192.168.1.100`, use `http://192.168.1.100:8080`
+
+4. **Windows Firewall Configuration:**
+   - Windows may prompt you to allow the connection when first accessed
+   - Or manually allow port 8080 in Windows Firewall:
+     - Open Windows Defender Firewall → Advanced Settings
+     - Inbound Rules → New Rule
+     - Port → TCP → 8080 → Allow connection
+     - Apply to all profiles
+
 ## Usage
 
-1. **Open the web interface** in your browser: http://localhost:8080
+1. **Open the web interface** in your browser: 
+   - **Local access:** http://localhost:8080
+   - **Network access:** http://<PC_IP_ADDRESS>:8080 (from other devices)
 2. **Set the desired delay** in milliseconds (0-10000)
 3. **Click "Start"** to begin intercepting and delaying packets
 4. **Monitor statistics** in real-time
@@ -162,6 +187,7 @@ WindowsNetworkManager/
 - `POST /api/start` - Start packet interception
 - `POST /api/stop` - Stop packet interception
 - `GET /api/stats` - Get network statistics
+- `GET /api/network` - Get server's local IP addresses for network access
 
 ## Technical Details
 
@@ -211,6 +237,14 @@ The application uses the `github.com/deblasis/godivert` library, which provides 
 - Verify the delay is set to a value > 0
 - Check that packet interception is started (status should show "Running")
 - Review console logs for error messages
+
+### Cannot access web interface from other devices
+
+- **Check Windows Firewall:** Ensure port 8080 is allowed for incoming connections
+- **Verify IP address:** Make sure you're using the correct IP address (check console output or `/api/network` endpoint)
+- **Network connectivity:** Ensure devices are on the same network (same WiFi/LAN)
+- **Firewall on other devices:** Check if other devices' firewalls are blocking the connection
+- **Try localhost first:** Verify the interface works at `http://localhost:8080` on the host PC
 
 ## Security Notes
 
