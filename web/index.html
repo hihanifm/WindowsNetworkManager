@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Windows Network Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        input[type="number"] {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            width: 150px;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-success:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-danger:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .status.running {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status.stopped {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            color: #333;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .info-box {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+        }
+
+        .info-box p {
+            color: #1e40af;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>🌐 Windows Network Manager</h1>
+            <p class="subtitle">Monitor and add latency to network packets</p>
+
+            <div class="control-group">
+                <label for="delay">Delay (ms):</label>
+                <input type="number" id="delay" min="0" max="10000" value="0">
+                <button class="btn-primary" onclick="updateDelay()">Set Delay</button>
+                <button class="btn-success" id="startBtn" onclick="startInterception()">Start</button>
+                <button class="btn-danger" id="stopBtn" onclick="stopInterception()" disabled>Stop</button>
+                <span id="status" class="status stopped">Stopped</span>
+            </div>
+
+            <div id="error" class="error"></div>
+
+            <div class="info-box">
+                <p><strong>⚠️ Important:</strong> This application requires Administrator privileges to intercept network packets.</p>
+                <p><strong>📝 Note:</strong> The delay is applied to all outbound network packets. Use with caution in production environments.</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Packets</div>
+                    <div class="stat-value" id="totalPackets">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Delayed Packets</div>
+                    <div class="stat-value" id="delayedPackets">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Bytes Processed</div>
+                    <div class="stat-value" id="bytesProcessed">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Uptime</div>
+                    <div class="stat-value" id="uptime">0s</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
+

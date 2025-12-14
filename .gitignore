@@ -1,0 +1,24 @@
+# Binaries
+*.exe
+*.dll
+*.sys
+
+# Go
+*.mod.sum
+go.sum
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# WinDivert files (user should download separately)
+WinDivert.dll
+WinDivert*.sys
+windivert.h
+
