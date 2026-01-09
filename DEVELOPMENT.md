@@ -89,12 +89,25 @@ Install with:
 go mod tidy
 ```
 
+## Mac Network Scanner
+
+A companion tool is included to discover Windows instances from your Mac:
+
+```bash
+cd scanner
+./build.sh
+./wnm-scanner scan
+```
+
+See `scanner/README.md` for full documentation.
+
 ## Notes
 
 - **WinDivert is Windows-only**: Cannot test packet interception on macOS
 - **Windows Service**: Service functionality only works on Windows
 - **Cross-compilation**: Go makes it easy to build Windows binaries from Mac
 - **No Windows VM needed**: Just copy the `.exe` to a Windows PC for testing
+- **Network Scanner**: Use the Mac scanner to discover Windows instances automatically
 
 ## Troubleshooting
 

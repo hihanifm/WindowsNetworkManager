@@ -12,6 +12,7 @@ A Windows application with a web interface that monitors network traffic and add
 - ⚡ Start/Stop packet interception on demand
 - 🔄 Dynamic delay adjustment while running
 - 🔧 Windows Service support - runs automatically on boot
+- 🔍 Mac Network Scanner - discover Windows instances from macOS
 
 ## Prerequisites
 
@@ -161,6 +162,7 @@ The web interface is accessible from other devices on the same network (WiFi/LAN
    - Check the console/event log when the application starts - it will display network-accessible URLs
    - Or use: `ipconfig` in Command Prompt and look for "IPv4 Address"
    - Or access the API: `http://localhost:18080/api/network` to get IP addresses
+   - **Or use the Mac Scanner** (see below) to automatically discover instances
 
 3. **Access from other devices:**
    - From another PC/phone/tablet on the same network, open: `http://<PC_IP_ADDRESS>:18080`
@@ -173,6 +175,53 @@ The web interface is accessible from other devices on the same network (WiFi/LAN
      - Inbound Rules → New Rule
      - Port → TCP → 18080 → Allow connection
      - Apply to all profiles
+
+## Mac Network Scanner 🔍
+
+A Mac companion tool to automatically discover Windows instances on your network.
+
+### Building the Scanner
+
+```bash
+cd scanner
+./build.sh
+# Or: make build
+```
+
+### Using the Scanner
+
+```bash
+# Scan network for Windows instances
+./wnm-scanner scan
+
+# Scan with custom settings
+./wnm-scanner scan -workers 50 -timeout 1s
+
+# Output in JSON format
+./wnm-scanner scan -json
+
+# Open discovered instance in browser
+./wnm-scanner open 192.168.1.100
+
+# List instances (alias for scan)
+./wnm-scanner list
+```
+
+### Scanner Features
+
+- **Automatic Network Detection**: Detects your local subnet automatically
+- **Parallel Scanning**: Scans multiple IPs simultaneously (default: 30 workers)
+- **Progress Tracking**: Shows real-time scan progress
+- **Instance Verification**: Verifies discovered endpoints are WindowsNetworkManager
+- **Quick Access**: Open discovered instances directly in browser
+
+### Installation (Optional)
+
+```bash
+cd scanner
+make install
+# Now you can use 'wnm-scanner' from anywhere
+```
 
 ## Usage
 
@@ -201,12 +250,20 @@ WindowsNetworkManager/
 ├── main.go                  # HTTP server and API endpoints
 ├── packet_delay.go          # WinDivert packet interception engine
 ├── service_wrapper.go       # Windows Service wrapper
+├── scanner/                 # Mac network scanner
+│   ├── main.go              # Scanner CLI
+│   ├── network_scanner.go   # Network scanning logic
+│   ├── discovery.go         # Instance discovery
+│   ├── browser.go           # Browser integration
+│   ├── Makefile             # Build system
+│   └── README.md            # Scanner documentation
 ├── web/
 │   ├── index.html           # Web interface
 │   └── static/
 │       └── app.js           # Frontend JavaScript
 ├── go.mod                   # Go dependencies
-├── build.bat                # Build script
+├── build.sh                 # macOS build script (cross-compile)
+├── build.bat                # Windows build script
 ├── install_service.bat      # Service installation script
 ├── uninstall_service.bat    # Service uninstallation script
 └── README.md                # This file
@@ -221,6 +278,7 @@ WindowsNetworkManager/
 - `POST /api/stop` - Stop packet interception
 - `GET /api/stats` - Get network statistics
 - `GET /api/network` - Get server's local IP addresses for network access
+- `GET /api/discover` - Discovery endpoint for network scanners (returns instance info)
 
 ## Technical Details
 

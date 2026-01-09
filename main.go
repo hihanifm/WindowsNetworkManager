@@ -16,13 +16,13 @@ import (
 )
 
 var (
-	currentDelay    time.Duration
-	delayMutex      sync.RWMutex
-	packetStats     = &PacketStats{}
-	statsMutex      sync.RWMutex
-	isRunning       bool
-	runningMutex    sync.RWMutex
-	packetEngine    *PacketEngine
+	currentDelay time.Duration
+	delayMutex   sync.RWMutex
+	packetStats  = &PacketStats{}
+	statsMutex   sync.RWMutex
+	isRunning    bool
+	runningMutex sync.RWMutex
+	packetEngine *PacketEngine
 )
 
 type PacketStats struct {
@@ -127,7 +127,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create service logger: %v", err)
 		}
-		
+
 		// Run as service
 		if err := s.Run(); err != nil {
 			serviceLogger.Error("Service run failed: ", err)
@@ -151,6 +151,7 @@ func main() {
 	http.HandleFunc("/api/start", handleStart)
 	http.HandleFunc("/api/stop", handleStop)
 	http.HandleFunc("/api/network", handleNetwork)
+	http.HandleFunc("/api/discover", handleDiscover)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
@@ -159,7 +160,7 @@ func main() {
 	// Bind to all interfaces (0.0.0.0) to allow network access
 	bindAddr := "0.0.0.0:" + *port
 	log.Printf("Starting web server on http://localhost:%s", *port)
-	
+
 	// Get and display local IP addresses for network access
 	localIPs := getLocalIPs()
 	if len(localIPs) > 0 {
@@ -170,11 +171,11 @@ func main() {
 	} else {
 		log.Println("Note: Could not detect local IP addresses for network access")
 	}
-	
+
 	log.Println("Note: This application requires Administrator privileges to intercept packets")
 	log.Println("Note: Windows Firewall may need to allow incoming connections on port", *port)
 	log.Println("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
-	
+
 	if err := http.ListenAndServe(bindAddr, nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
@@ -329,11 +330,33 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 
 func handleNetwork(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	localIPs := getLocalIPs()
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"local_ips": localIPs,
 		"port":      "18080",
+	})
+}
+
+func handleDiscover(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	localIPs := getLocalIPs()
+	runningMutex.RLock()
+	running := isRunning
+	runningMutex.RUnlock()
+
+	delayMutex.RLock()
+	delayMs := currentDelay.Milliseconds()
+	delayMutex.RUnlock()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"service":    "WindowsNetworkManager",
+		"version":    "1.0.0",
+		"port":       18080,
+		"local_ips":  localIPs,
+		"is_running": running,
+		"delay_ms":   delayMs,
 	})
 }
 
@@ -358,13 +381,13 @@ func getLocalIPs() []string {
 		if !ok {
 			continue
 		}
-		
+
 		ip := ipNet.IP
 		// Skip loopback and link-local addresses
 		if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
 			continue
 		}
-		
+
 		// Only include IPv4 addresses
 		if ip.To4() != nil {
 			ips = append(ips, ip.String())
@@ -373,4 +396,3 @@ func getLocalIPs() []string {
 
 	return ips
 }
-
