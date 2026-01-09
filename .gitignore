@@ -17,6 +17,11 @@ go.sum
 .DS_Store
 Thumbs.db
 
+# macOS
+*.DS_Store
+.AppleDouble
+.LSOverride
+
 # WinDivert files (user should download separately)
 WinDivert.dll
 WinDivert*.sys

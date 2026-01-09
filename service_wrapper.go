@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"

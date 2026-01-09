@@ -171,7 +171,8 @@ func (pe *PacketEngine) processPackets() {
 func (pe *PacketEngine) sendPacket(packet *godivert.Packet) {
 	// Note: The godivert API may vary. If handle.Send doesn't work,
 	// try: packet.Send(pe.handle) instead
-	if err := pe.handle.Send(packet); err != nil {
+	_, err := pe.handle.Send(packet)
+	if err != nil {
 		log.Printf("Error sending packet: %v", err)
 		return
 	}

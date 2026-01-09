@@ -15,18 +15,53 @@ A Windows application with a web interface that monitors network traffic and add
 
 ## Prerequisites
 
-1. **Windows 10/11** (64-bit)
+### Development (macOS)
+1. **macOS** (for development)
 2. **Go 1.21+** - [Download](https://golang.org/dl/)
-3. **WinDivert Library** - [Download](https://www.reqrypt.org/windivert.html)
-4. **Administrator privileges** (required to run)
+3. **Make** (usually pre-installed on macOS)
 
-## Setup Instructions
+### Runtime (Windows)
+1. **Windows 10/11** (64-bit) - Required to run the application
+2. **WinDivert Library** - [Download](https://www.reqrypt.org/windivert.html)
+3. **Administrator privileges** (required to run on Windows)
+
+## Development Setup (macOS)
 
 ### 1. Install Go
 
-Download and install Go from the official website: https://golang.org/dl/
+```bash
+# Using Homebrew (recommended)
+brew install go
 
-### 2. Download WinDivert
+# Or download from: https://golang.org/dl/
+```
+
+### 2. Build for Windows
+
+The project cross-compiles from macOS to Windows:
+
+```bash
+# Option 1: Using the build script
+./build.sh
+
+# Option 2: Using Make
+make build
+
+# Option 3: Manual cross-compilation
+GOOS=windows GOARCH=amd64 go build -o WindowsNetworkManager.exe
+```
+
+This creates `WindowsNetworkManager.exe` which you can copy to your Windows PC.
+
+### 3. Transfer to Windows
+
+1. Copy `WindowsNetworkManager.exe` to your Windows PC
+2. Download WinDivert and copy `WinDivert.dll` to the same directory
+3. Run on Windows as Administrator
+
+## Runtime Setup (Windows)
+
+### 1. Download WinDivert
 
 1. Download WinDivert from: https://www.reqrypt.org/windivert.html
 2. Extract the archive
@@ -36,30 +71,28 @@ Download and install Go from the official website: https://golang.org/dl/
    
    **Note:** The Go library (`github.com/deblasis/godivert`) will automatically load the DLL, but you need to ensure it's in the same directory as the executable or in your system PATH.
 
-### 3. Build the Project
+### 2. Build the Project (on macOS)
 
 ```bash
 # Install dependencies
 go mod tidy
 
-# Build (on Windows)
-go build -o WindowsNetworkManager.exe
+# Build for Windows (cross-compile from Mac)
+./build.sh
+# Or: make build
 ```
 
-Or use the provided build script:
+This will create `WindowsNetworkManager.exe` ready for Windows.
 
-```bash
-build.bat
-```
+### 3. Run on Windows
 
-### 4. Run the Application
+**IMPORTANT:** Run as Administrator on Windows!
 
-**IMPORTANT:** Run as Administrator!
-
-1. Right-click Command Prompt or PowerShell
-2. Select "Run as Administrator"
-3. Navigate to the project directory
-4. Run: `.\WindowsNetworkManager.exe`
+1. Copy `WindowsNetworkManager.exe` and `WinDivert.dll` to your Windows PC
+2. Right-click Command Prompt or PowerShell
+3. Select "Run as Administrator"
+4. Navigate to the directory with the executable
+5. Run: `.\WindowsNetworkManager.exe`
 
 The web interface will be available at: **http://localhost:18080**
 

@@ -64,7 +64,6 @@ func main() {
 		DisplayName: "Windows Network Manager",
 		Description: "Monitors network traffic and adds configurable latency to network packets",
 		Executable:  exePath,
-		WorkingDir:  exeDir,
 	}
 
 	// Create service
