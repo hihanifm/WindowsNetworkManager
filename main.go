@@ -144,6 +144,11 @@ func main() {
 	// Initialize packet stats
 	packetStats.StartTime = time.Now()
 
+	// Initialize upgrade manager
+	if err := initUpgradeManager(); err != nil {
+		log.Printf("Warning: Failed to initialize upgrade manager: %v", err)
+	}
+
 	// Setup HTTP routes
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/api/config", handleConfig)
@@ -152,6 +157,9 @@ func main() {
 	http.HandleFunc("/api/stop", handleStop)
 	http.HandleFunc("/api/network", handleNetwork)
 	http.HandleFunc("/api/discover", handleDiscover)
+	http.HandleFunc("/api/upgrade/check", handleUpgradeCheck)
+	http.HandleFunc("/api/upgrade", handleUpgrade)
+	http.HandleFunc("/api/upgrade/status", handleUpgradeStatus)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
@@ -395,4 +403,114 @@ func getLocalIPs() []string {
 	}
 
 	return ips
+}
+
+func handleUpgradeCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get update URL from query parameter or use default
+	updateURL := r.URL.Query().Get("url")
+	if updateURL == "" {
+		updateURL = DefaultUpdateURL
+	}
+
+	status, err := CheckForUpdates(updateURL)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+			"status": status,
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(status)
+}
+
+func handleUpgrade(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check if upgrade is already in progress
+	upgradeMutex.RLock()
+	if upgradeStatus != nil && upgradeStatus.Status != "idle" && upgradeStatus.Status != "completed" && upgradeStatus.Status != "error" {
+		upgradeMutex.RUnlock()
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Upgrade already in progress",
+		})
+		return
+	}
+	upgradeMutex.RUnlock()
+
+	var req struct {
+		DownloadURL string `json:"download_url,omitempty"`
+		UpdateURL   string `json:"update_url,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// If no body, check for updates first
+		updateURL := DefaultUpdateURL
+		if req.UpdateURL != "" {
+			updateURL = req.UpdateURL
+		}
+
+		status, err := CheckForUpdates(updateURL)
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		if !status.UpdateAvailable {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": "No update available",
+				"status": status,
+			})
+			return
+		}
+
+		req.DownloadURL = status.DownloadURL
+	}
+
+	if req.DownloadURL == "" {
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Download URL required",
+		})
+		return
+	}
+
+	// Start upgrade in background
+	go runUpgrade(req.DownloadURL)
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "upgrade_started",
+	})
+}
+
+func runUpgrade(downloadURL string) {
+	// Download
+	if err := DownloadUpdate(downloadURL); err != nil {
+		return
+	}
+
+	// Install
+	if err := InstallUpdate(); err != nil {
+		return
+	}
+}
+
+func handleUpgradeStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	status := GetUpgradeStatus()
+	json.NewEncoder(w).Encode(status)
 }

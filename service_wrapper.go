@@ -71,6 +71,11 @@ func (p *program) run() {
 	// Initialize packet stats
 	packetStats.StartTime = time.Now()
 
+	// Initialize upgrade manager
+	if err := initUpgradeManager(); err != nil {
+		serviceLogger.Error("Failed to initialize upgrade manager: ", err)
+	}
+
 	// Setup HTTP routes
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/api/config", handleConfig)
@@ -79,6 +84,9 @@ func (p *program) run() {
 	http.HandleFunc("/api/stop", handleStop)
 	http.HandleFunc("/api/network", handleNetwork)
 	http.HandleFunc("/api/discover", handleDiscover)
+	http.HandleFunc("/api/upgrade/check", handleUpgradeCheck)
+	http.HandleFunc("/api/upgrade", handleUpgrade)
+	http.HandleFunc("/api/upgrade/status", handleUpgradeStatus)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))

@@ -13,6 +13,7 @@ A Windows application with a web interface that monitors network traffic and add
 - 🔄 Dynamic delay adjustment while running
 - 🔧 Windows Service support - runs automatically on boot
 - 🔍 Mac Network Scanner - discover Windows instances from macOS
+- 🔄 Remote Upgrade - update the application remotely via web interface
 
 ## Prerequisites
 
@@ -250,6 +251,7 @@ WindowsNetworkManager/
 ├── main.go                  # HTTP server and API endpoints
 ├── packet_delay.go          # WinDivert packet interception engine
 ├── service_wrapper.go       # Windows Service wrapper
+├── upgrade.go               # Remote upgrade functionality
 ├── scanner/                 # Mac network scanner
 │   ├── main.go              # Scanner CLI
 │   ├── network_scanner.go   # Network scanning logic
@@ -279,6 +281,9 @@ WindowsNetworkManager/
 - `GET /api/stats` - Get network statistics
 - `GET /api/network` - Get server's local IP addresses for network access
 - `GET /api/discover` - Discovery endpoint for network scanners (returns instance info)
+- `GET /api/upgrade/check` - Check for available updates
+- `POST /api/upgrade` - Start upgrade process
+- `GET /api/upgrade/status` - Get upgrade progress/status
 
 ## Technical Details
 
@@ -301,6 +306,52 @@ The application uses the `github.com/deblasis/godivert` library, which provides 
 - Packet queue size is limited to 1000 packets to prevent memory issues
 - If the queue is full, packets are sent immediately to avoid blocking
 - Error handling includes retry logic and graceful degradation
+
+## Remote Upgrade
+
+The application supports remote upgrades via the web interface, allowing you to update without direct access to the Windows host.
+
+### How to Upgrade
+
+1. **Open the web interface** (http://localhost:18080 or from network)
+2. **Click "Check for Updates"** in the Updates section
+3. **If an update is available**, click "Upgrade Now"
+4. **Monitor progress** - the upgrade will:
+   - Download the new executable from GitHub releases
+   - Stop the service automatically
+   - Backup the current version
+   - Install the new version
+   - Restart the service
+
+### Upgrade Process
+
+The upgrade system:
+- Checks GitHub releases for new versions
+- Downloads the Windows executable automatically
+- Creates a backup of the current version (`.exe.backup`)
+- Stops the Windows service gracefully
+- Replaces the executable
+- Restarts the service automatically
+
+### Configuration
+
+By default, the upgrade system checks:
+- **GitHub Releases API**: `https://api.github.com/repos/hihanifm/WindowsNetworkManager/releases/latest`
+- Looks for assets ending in `.exe` containing "WindowsNetworkManager"
+
+### Safety Features
+
+- **Automatic backup** before upgrade
+- **Service restart** after successful upgrade
+- **Progress tracking** with real-time status
+- **Error handling** with rollback capability
+- **HTTPS only** for secure downloads
+
+### Requirements
+
+- Application must be running as a Windows Service for automatic restart
+- Administrator privileges required for service management
+- Internet connection for downloading updates
 
 ## Troubleshooting
 
