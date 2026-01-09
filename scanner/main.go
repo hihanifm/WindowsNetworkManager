@@ -10,18 +10,36 @@ import (
 
 const (
 	DefaultPort     = 18080
+	DefaultWebPort  = 18081
 	DefaultTimeout  = 2 * time.Second
 	DefaultWorkers  = 30
 	ServiceName     = "WindowsNetworkManager"
 )
 
 func main() {
+	// Web server mode flags
+	webMode := flag.Bool("web", false, "Run as web server")
+	webPort := flag.Int("port", DefaultWebPort, "Web server port")
+
 	scanCmd := flag.NewFlagSet("scan", flag.ExitOnError)
 	workers := scanCmd.Int("workers", DefaultWorkers, "Number of parallel workers")
 	timeout := scanCmd.Duration("timeout", DefaultTimeout, "Timeout per IP check")
 	jsonOutput := scanCmd.Bool("json", false, "Output in JSON format")
 
 	openCmd := flag.NewFlagSet("open", flag.ExitOnError)
+
+	// Check for web mode first
+	flag.Parse()
+	if *webMode {
+		startWebServer(*webPort)
+		return
+	}
+
+	// If no flags and no args, default to web mode
+	if len(os.Args) == 1 {
+		startWebServer(DefaultWebPort)
+		return
+	}
 
 	if len(os.Args) < 2 {
 		printUsage()

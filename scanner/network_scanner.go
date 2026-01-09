@@ -14,8 +14,8 @@ func ScanNetwork(workers int, timeout time.Duration) ([]InstanceInfo, error) {
 		return nil, fmt.Errorf("failed to detect local subnet: %v", err)
 	}
 
-	fmt.Printf("Scanning network: %s\n", subnet)
-	fmt.Printf("Using %d workers with %v timeout per IP...\n\n", workers, timeout)
+	// Note: Console output suppressed when called from web server
+	// (output is handled via web_server.go progress updates)
 
 	ipRange, err := parseSubnet(subnet)
 	if err != nil {
@@ -137,16 +137,8 @@ func scanIPRange(ipRange []string, port int, workers int, timeout time.Duration)
 	progressTicker := time.NewTicker(500 * time.Millisecond)
 	defer progressTicker.Stop()
 
-	// Start progress reporting
-	go func() {
-		for range progressTicker.C {
-			mu.Lock()
-			currentScanned := scanned
-			currentFound := found
-			mu.Unlock()
-			fmt.Printf("\rScanned: %d/%d | Found: %d", currentScanned, len(ipRange), currentFound)
-		}
-	}()
+	// Progress reporting is handled by web_server.go when called from web interface
+	// Console output suppressed for cleaner web experience
 
 	// Start workers
 	for i := 0; i < workers; i++ {
@@ -168,9 +160,6 @@ func scanIPRange(ipRange []string, port int, workers int, timeout time.Duration)
 
 	wg.Wait()
 	progressTicker.Stop()
-	
-	// Clear progress line
-	fmt.Printf("\r" + "                                                                                " + "\r")
 
 	return instances, nil
 }

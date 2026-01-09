@@ -2,6 +2,22 @@
 
 A Mac companion tool to automatically discover Windows Network Manager instances running on your local network.
 
+## Web Interface & Background Service
+
+The scanner includes a web interface that can run as a macOS background service, accessible from any device on your network.
+
+### Quick Start (Web Interface)
+
+```bash
+# Run web server
+./wnm-scanner -web
+
+# Or install as background service (auto-starts on boot)
+./install_service.sh
+```
+
+Access the web interface at: **http://localhost:18081** (or from network: **http://<mac-ip>:18081**)
+
 ## Quick Start
 
 ### Build
@@ -119,6 +135,49 @@ IP Address         Status     Delay (ms) URL
     "local_ips": ["192.168.1.100"]
   }
 ]
+```
+
+## Web Interface Mode
+
+### Running as Web Server
+
+```bash
+# Start web server (default port 18081)
+./wnm-scanner -web
+
+# Custom port
+./wnm-scanner -web -port 8080
+```
+
+### Installing as macOS Background Service
+
+```bash
+# Install service (auto-starts on boot)
+./install_service.sh
+
+# Uninstall service
+./uninstall_service.sh
+```
+
+**Service Features:**
+- Runs continuously in background
+- Auto-starts when Mac boots
+- Auto-restarts if it crashes (keep-alive)
+- Accessible from any device on network
+- Logs to `~/Library/Logs/wnm-scanner/`
+
+**Access Web Interface:**
+- Local: http://localhost:18081
+- Network: http://<mac-ip>:18081
+
+**Check Service Status:**
+```bash
+launchctl list | grep com.windowsnetworkmanager.scanner
+```
+
+**View Logs:**
+```bash
+tail -f ~/Library/Logs/wnm-scanner/out.log
 ```
 
 ## Requirements
