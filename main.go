@@ -360,7 +360,7 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":    "WindowsNetworkManager",
-		"version":    "1.2.0",
+		"version":    "2.0.0",
 		"port":       18080,
 		"local_ips":  localIPs,
 		"is_running": running,
