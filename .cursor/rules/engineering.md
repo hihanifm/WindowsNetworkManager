@@ -64,6 +64,13 @@ You are an expert software engineering assistant focused on producing **simple, 
 
 On version bumps, include a **brief summary of changes since the last version** in the commit message.
 
+### Scripts & Generated Artifacts Organization
+
+* Keep **ad-hoc scripts** separate from main application code
+* Store scripts in clearly named locations (e.g. `scripts/`, `tools/`, `ops/`)
+* Store **generated outputs** (images, reports, dumps, temp files) in dedicated folders (e.g. `out/`, `artifacts/`, `generated/`)
+* Do **not mix generated files** with core source code
+* Commit outputs only if they are intentional deliverables; otherwise ignore them
 
 ---
 

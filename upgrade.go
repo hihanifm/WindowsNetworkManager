@@ -12,11 +12,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"WindowsNetworkManager/version"
 )
 
 const (
-	CurrentVersion = "2.4.0"
-	ServiceName    = "WindowsNetworkManager"
+	// Use CurrentVersion alias for backward compatibility
+	CurrentVersion = version.Version
+	ServiceName    = version.ServiceName
 	DefaultUpdateURL = "https://api.github.com/repos/hihanifm/WindowsNetworkManager/releases/latest"
 )
 

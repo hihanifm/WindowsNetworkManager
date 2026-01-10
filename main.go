@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kardianos/service"
+	"WindowsNetworkManager/version"
 )
 
 var (
@@ -359,8 +360,8 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 	delayMutex.RUnlock()
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service":    "WindowsNetworkManager",
-		"version":    "2.4.0",
+		"service":    version.ServiceName,
+		"version":    version.Version,
 		"port":       18080,
 		"local_ips":  localIPs,
 		"is_running": running,

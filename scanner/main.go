@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"WindowsNetworkManager/version"
 )
 
 const (
@@ -13,8 +15,9 @@ const (
 	DefaultWebPort  = 18081
 	DefaultTimeout  = 2 * time.Second
 	DefaultWorkers  = 30
-	ServiceName     = "WindowsNetworkManager"
-	Version         = "2.4.0"
+	// Use shared version from version package
+	ServiceName     = version.ServiceName
+	Version         = version.Version
 )
 
 func main() {
