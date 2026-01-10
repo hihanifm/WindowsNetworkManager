@@ -377,6 +377,10 @@ By default, the upgrade system checks:
 
 ## Troubleshooting
 
+For detailed troubleshooting steps, see **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - A comprehensive guide covering firewall issues, WinDivert errors, service problems, network access, and more.
+
+### Quick Troubleshooting
+
 ### "Failed to open WinDivert handle"
 
 - Ensure you're running as Administrator
