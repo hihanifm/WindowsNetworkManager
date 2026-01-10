@@ -14,6 +14,7 @@ const (
 	DefaultTimeout  = 2 * time.Second
 	DefaultWorkers  = 30
 	ServiceName     = "WindowsNetworkManager"
+	Version         = "2.3.0"
 )
 
 func main() {

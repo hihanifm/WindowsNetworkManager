@@ -183,6 +183,20 @@
             color: #333;
             z-index: 1;
         }
+
+        .version-info {
+            text-align: right;
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .version-label {
+            font-weight: 600;
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -201,6 +215,9 @@
         <div class="card instances-list">
             <h2>Discovered Instances</h2>
             <div id="instances"></div>
+            <div class="version-info">
+                <span class="version-label">Scanner Version:</span> <span id="scannerVersion">-</span>
+            </div>
         </div>
     </div>
 

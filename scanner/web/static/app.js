@@ -4,6 +4,7 @@ let isScanning = false;
 // Load instances on page load
 window.addEventListener('DOMContentLoaded', () => {
     loadInstances();
+    loadScannerVersion();
     // Start with slower polling, will speed up during scanning
     startStatusPolling(2000);
 });
@@ -215,4 +216,42 @@ function displayInstances(instances) {
 function displayNoInstances() {
     const container = document.getElementById('instances');
     container.innerHTML = '<div class="no-instances">No instances discovered yet. Click "Scan Network" to search.</div>';
+}
+
+async function loadScannerVersion() {
+    console.log('loadScannerVersion called');
+    try {
+        const versionEl = document.getElementById('scannerVersion');
+        if (!versionEl) {
+            console.warn('Scanner version element not found, retrying...');
+            // Retry after a short delay
+            setTimeout(loadScannerVersion, 500);
+            return;
+        }
+
+        console.log('Fetching /api/status...');
+        const response = await fetch('/api/status');
+        console.log('Response status:', response.status, response.ok);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Version data received:', data);
+        
+        if (data && data.version) {
+            versionEl.textContent = data.version;
+            console.log('Version set to:', data.version);
+        } else {
+            console.warn('No version in response:', data);
+            versionEl.textContent = 'Unknown';
+        }
+    } catch (error) {
+        console.error('Error loading scanner version:', error);
+        const versionEl = document.getElementById('scannerVersion');
+        if (versionEl) {
+            versionEl.textContent = 'Error: ' + error.message;
+        }
+    }
 }

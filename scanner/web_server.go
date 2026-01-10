@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -36,9 +38,21 @@ func startWebServer(port int) {
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/api/scan", handleScan)
 	http.HandleFunc("/api/instances", handleInstances)
+	http.HandleFunc("/api/status", handleStatus)
 
-	// Serve static files
-	fs := http.FileServer(http.Dir("./web/static"))
+	// Serve static files - use executable directory to find web files
+	var staticDir string
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		staticPath := filepath.Join(exeDir, "web", "static")
+		if _, err := os.Stat(staticPath); err == nil {
+			staticDir = staticPath
+		}
+	}
+	if staticDir == "" {
+		staticDir = "./web/static"
+	}
+	fs := http.FileServer(http.Dir(staticDir))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 
 	bindAddr := fmt.Sprintf("0.0.0.0:%d", port)
@@ -59,6 +73,17 @@ func startWebServer(port int) {
 }
 
 func serveIndex(w http.ResponseWriter, r *http.Request) {
+	// Get executable directory to ensure we serve files relative to the binary location
+	exePath, err := os.Executable()
+	if err == nil {
+		exeDir := filepath.Dir(exePath)
+		indexPath := filepath.Join(exeDir, "web", "index.html")
+		if _, err := os.Stat(indexPath); err == nil {
+			http.ServeFile(w, r, indexPath)
+			return
+		}
+	}
+	// Fallback to relative path
 	http.ServeFile(w, r, "./web/index.html")
 }
 
@@ -231,4 +256,17 @@ func getLocalIPs() []string {
 	}
 
 	return ips
+}
+
+// handleStatus returns scanner status and version information
+func handleStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	response := map[string]interface{}{
+		"service": ServiceName,
+		"version": Version,
+		"port":    DefaultWebPort,
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
