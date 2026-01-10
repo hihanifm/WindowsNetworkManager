@@ -1,11 +1,29 @@
 # Setup Guide
 
-## Quick Start
+## Quick Start (Windows Users)
+
+### Fastest Installation Method
+
+1. **[Download from GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/)** (recommended)
+   - Complete package with EXE and DLL included
+   - No additional downloads needed
+   - Extract and run as Administrator
+
+2. **Or download from [GitHub Releases](https://github.com/hihanifm/WindowsNetworkManager/releases/latest)**
+   - Download `WindowsNetworkManager-vX.X.X.zip`
+   - Extract the ZIP file
+   - Run `WindowsNetworkManager.exe` as Administrator
+
+3. Access the web interface at **http://localhost:18080**
+
+> **Note:** All releases include WinDivert.dll - no separate download needed!
+
+## Development Setup (For Building from Source)
 
 ### 1. Install Go
 Download and install Go 1.21 or later from https://golang.org/dl/
 
-### 2. Download WinDivert
+### 2. Download WinDivert (if building from source)
 1. Go to https://www.reqrypt.org/windivert.html
 2. Download the latest version (WinDivert 2.2 or later)
 3. Extract the archive

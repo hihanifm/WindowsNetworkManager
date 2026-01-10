@@ -15,6 +15,19 @@ A Windows application with a web interface that monitors network traffic and add
 - 🔍 Mac Network Scanner - discover Windows instances from macOS
 - 🔄 Remote Upgrade - update the application remotely via web interface
 
+## Quick Installation (Windows)
+
+**Fastest way to get started:**
+
+1. **[Download from GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/)** - Complete package with EXE and DLL
+2. Or download from **[GitHub Releases](https://github.com/hihanifm/WindowsNetworkManager/releases/latest)**
+3. Extract the ZIP file (or download individual files)
+4. Run `WindowsNetworkManager.exe` as Administrator
+
+The web interface will be available at **http://localhost:18080**
+
+> **Note:** WinDivert.dll is included in all releases, so no additional downloads needed!
+
 ## Prerequisites
 
 ### Development (macOS)
@@ -24,7 +37,7 @@ A Windows application with a web interface that monitors network traffic and add
 
 ### Runtime (Windows)
 1. **Windows 10/11** (64-bit) - Required to run the application
-2. **WinDivert Library** - [Download](https://www.reqrypt.org/windivert.html)
+2. **WinDivert Library** - Included in releases, or [download separately](https://www.reqrypt.org/windivert.html)
 3. **Administrator privileges** (required to run on Windows)
 
 ## Development Setup (macOS)
@@ -63,7 +76,16 @@ This creates `WindowsNetworkManager.exe` which you can copy to your Windows PC.
 
 ## Runtime Setup (Windows)
 
-### 1. Download WinDivert
+### Option 1: Quick Install from GitHub (Recommended)
+
+1. Visit **[GitHub Pages Download Page](https://hihanifm.github.io/WindowsNetworkManager/)** or **[GitHub Releases](https://github.com/hihanifm/WindowsNetworkManager/releases/latest)**
+2. Download the complete ZIP package (includes both EXE and DLL)
+3. Extract to a folder of your choice
+4. Run `WindowsNetworkManager.exe` as Administrator
+
+### Option 2: Build from Source (Development)
+
+#### Download WinDivert (if not using pre-built releases)
 
 1. Download WinDivert from: https://www.reqrypt.org/windivert.html
 2. Extract the archive
@@ -73,7 +95,7 @@ This creates `WindowsNetworkManager.exe` which you can copy to your Windows PC.
    
    **Note:** The Go library (`github.com/deblasis/godivert`) will automatically load the DLL, but you need to ensure it's in the same directory as the executable or in your system PATH.
 
-### 2. Build the Project (on macOS)
+#### Build the Project (on macOS)
 
 ```bash
 # Install dependencies

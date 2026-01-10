@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Windows Network Manager - Download</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px 30px;
+        }
+        
+        .version-info {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .version-info .version {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .version-info .status {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .download-section {
+            margin-bottom: 40px;
+        }
+        
+        .download-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .download-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .download-btn {
+            display: block;
+            padding: 18px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 1.1em;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .download-btn.secondary {
+            background: #6c757d;
+        }
+        
+        .download-btn.secondary:hover {
+            background: #5a6268;
+            box-shadow: 0 10px 20px rgba(108, 117, 125, 0.4);
+        }
+        
+        .download-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .download-btn .btn-label {
+            display: block;
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+        
+        .instructions {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .instructions h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 10px;
+        }
+        
+        .instructions code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: #666;
+            font-size: 0.9em;
+            background: #f8f9fa;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Windows Network Manager</h1>
+            <p>Download the latest version for quick installation</p>
+        </div>
+        
+        <div class="content">
+            <div id="loading" class="loading">
+                Loading latest release...
+            </div>
+            
+            <div id="error" class="error" style="display: none;"></div>
+            
+            <div id="content" style="display: none;">
+                <div class="version-info">
+                    <div class="version">Version <span id="version">-</span></div>
+                    <div class="status" id="status">Latest release</div>
+                </div>
+                
+                <div class="download-section">
+                    <h2>Download Options</h2>
+                    <div class="download-buttons">
+                        <a id="download-zip" href="#" class="download-btn" download>
+                            Download Complete Package (ZIP)
+                            <span class="btn-label">Includes WindowsNetworkManager.exe and WinDivert.dll</span>
+                        </a>
+                        <a id="download-exe" href="#" class="download-btn secondary" download>
+                            Download Executable Only
+                            <span class="btn-label">WindowsNetworkManager.exe</span>
+                        </a>
+                        <a id="download-dll" href="#" class="download-btn secondary" download>
+                            Download WinDivert DLL
+                            <span class="btn-label">WinDivert.dll (required library)</span>
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="instructions">
+                    <h3>Installation Instructions</h3>
+                    <ol>
+                        <li>Download the <strong>Complete Package (ZIP)</strong> for easiest setup, or download individual files.</li>
+                        <li>If you downloaded the ZIP, extract it to a folder of your choice.</li>
+                        <li>Ensure both <code>WindowsNetworkManager.exe</code> and <code>WinDivert.dll</code> are in the same directory.</li>
+                        <li><strong>Important:</strong> Right-click on <code>WindowsNetworkManager.exe</code> and select <strong>"Run as Administrator"</strong> (required for network packet interception).</li>
+                        <li>Access the web interface at <code>http://localhost:18080</code> from your browser.</li>
+                        <li>For network access from other devices, configure Windows Firewall to allow port 18080.</li>
+                    </ol>
+                    <p style="margin-top: 15px; font-size: 0.9em; color: #666;">
+                        For more detailed setup instructions, see the <a href="https://github.com/hihanifm/WindowsNetworkManager/blob/master/README.md" target="_blank">README</a> or <a href="https://github.com/hihanifm/WindowsNetworkManager/blob/master/SETUP.md" target="_blank">SETUP guide</a>.
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>
+                <a href="https://github.com/hihanifm/WindowsNetworkManager">View on GitHub</a> |
+                <a href="https://github.com/hihanifm/WindowsNetworkManager/releases">All Releases</a> |
+                <a href="https://github.com/hihanifm/WindowsNetworkManager/blob/master/README.md">Documentation</a>
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        const REPO_OWNER = 'hihanifm';
+        const REPO_NAME = 'WindowsNetworkManager';
+        const API_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
+        
+        async function fetchLatestRelease() {
+            try {
+                const response = await fetch(API_URL);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch release: ${response.status} ${response.statusText}`);
+                }
+                
+                const release = await response.json();
+                return release;
+            } catch (error) {
+                console.error('Error fetching release:', error);
+                throw error;
+            }
+        }
+        
+        function findAsset(release, pattern) {
+            return release.assets.find(asset => {
+                if (typeof pattern === 'string') {
+                    return asset.name.includes(pattern);
+                } else if (pattern instanceof RegExp) {
+                    return pattern.test(asset.name);
+                }
+                return false;
+            });
+        }
+        
+        async function loadReleaseInfo() {
+            const loadingEl = document.getElementById('loading');
+            const errorEl = document.getElementById('error');
+            const contentEl = document.getElementById('content');
+            
+            try {
+                const release = await fetchLatestRelease();
+                
+                // Extract version from tag (remove 'v' prefix)
+                const version = release.tag_name.replace(/^v/, '');
+                document.getElementById('version').textContent = version;
+                
+                // Find assets
+                const zipAsset = findAsset(release, /\.zip$/i);
+                const exeAsset = findAsset(release, /WindowsNetworkManager.*\.exe$/i);
+                const dllAsset = findAsset(release, /WinDivert.*\.dll$/i);
+                
+                // Set download links
+                if (zipAsset) {
+                    document.getElementById('download-zip').href = zipAsset.browser_download_url;
+                    document.getElementById('download-zip').download = zipAsset.name;
+                } else {
+                    document.getElementById('download-zip').style.display = 'none';
+                }
+                
+                if (exeAsset) {
+                    document.getElementById('download-exe').href = exeAsset.browser_download_url;
+                    document.getElementById('download-exe').download = exeAsset.name;
+                } else {
+                    document.getElementById('download-exe').disabled = true;
+                    document.getElementById('download-exe').href = '#';
+                }
+                
+                if (dllAsset) {
+                    document.getElementById('download-dll').href = dllAsset.browser_download_url;
+                    document.getElementById('download-dll').download = dllAsset.name;
+                } else {
+                    document.getElementById('download-dll').disabled = true;
+                    document.getElementById('download-dll').href = '#';
+                }
+                
+                // Update status
+                const publishedAt = new Date(release.published_at);
+                const daysAgo = Math.floor((Date.now() - publishedAt.getTime()) / (1000 * 60 * 60 * 24));
+                let statusText = 'Latest release';
+                if (daysAgo === 0) {
+                    statusText = 'Released today';
+                } else if (daysAgo === 1) {
+                    statusText = 'Released yesterday';
+                } else if (daysAgo < 7) {
+                    statusText = `Released ${daysAgo} days ago`;
+                } else {
+                    statusText = `Released on ${publishedAt.toLocaleDateString()}`;
+                }
+                document.getElementById('status').textContent = statusText;
+                
+                // Show content, hide loading
+                loadingEl.style.display = 'none';
+                contentEl.style.display = 'block';
+                
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                errorEl.textContent = `Error: ${error.message}. Please check the GitHub Releases page directly.`;
+                console.error('Failed to load release info:', error);
+            }
+        }
+        
+        // Load release info on page load
+        loadReleaseInfo();
+    </script>
+</body>
+</html>

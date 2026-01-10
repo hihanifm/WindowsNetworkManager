@@ -1,0 +1,117 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v2.0.0
+  workflow_dispatch:  # Manual trigger option
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            TAG=${GITHUB_REF#refs/tags/}
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "tag=${TAG}" >> $GITHUB_OUTPUT
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+          else
+            # For manual dispatch, build only (no release)
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+            echo "Version check skipped - this is not a tagged release"
+          fi
+
+      - name: Build Windows executable
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          go build -o WindowsNetworkManager.exe
+          ls -lh WindowsNetworkManager.exe
+
+      - name: Download WinDivert DLL
+        run: |
+          echo "Downloading WinDivert 2.2.0..."
+          # Try the WinDivert download URL - adjust if the URL format is different
+          curl -L -f -o windivert.zip "https://www.reqrypt.org/download/WinDivert-2.2.0-A/WinDivert-2.2.0-A.zip" || {
+            echo "Error: Failed to download WinDivert. Please verify the download URL."
+            echo "Expected URL: https://www.reqrypt.org/download/WinDivert-2.2.0-A/WinDivert-2.2.0-A.zip"
+            exit 1
+          }
+          unzip -q windivert.zip || {
+            echo "Error: Failed to extract WinDivert archive"
+            exit 1
+          }
+          if [ -f "WinDivert-2.2.0-A/x64/WinDivert.dll" ]; then
+            cp WinDivert-2.2.0-A/x64/WinDivert.dll ./WinDivert.dll
+            ls -lh WinDivert.dll
+            rm -rf windivert.zip WinDivert-2.2.0-A
+          else
+            echo "Error: WinDivert.dll not found in expected location"
+            echo "Archive contents:"
+            find . -name "*.dll" -o -name "*.sys" || true
+            exit 1
+          fi
+
+      - name: Create release bundle
+        if: steps.version.outputs.is_tag == 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ZIP_NAME="WindowsNetworkManager-v${VERSION}.zip"
+          zip -r "${ZIP_NAME}" WindowsNetworkManager.exe WinDivert.dll
+          ls -lh "${ZIP_NAME}"
+
+      - name: Upload build artifacts (manual dispatch only)
+        if: steps.version.outputs.is_tag != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            WindowsNetworkManager.exe
+            WinDivert.dll
+          retention-days: 7
+
+      - name: Create Release
+        if: steps.version.outputs.is_tag == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          body: |
+            ## Windows Network Manager ${{ steps.version.outputs.version }}
+            
+            ### Installation
+            1. Download `WindowsNetworkManager-v${{ steps.version.outputs.version }}.zip`
+            2. Extract the ZIP file
+            3. Run `WindowsNetworkManager.exe` as Administrator
+            
+            ### Files Included
+            - `WindowsNetworkManager.exe` - Main application
+            - `WinDivert.dll` - Required library (WinDivert 2.2.0)
+            
+            ### Quick Install
+            See [GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/) for quick installation instructions.
+          files: |
+            WindowsNetworkManager.exe
+            WinDivert.dll
+            WindowsNetworkManager-v${{ steps.version.outputs.version }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
