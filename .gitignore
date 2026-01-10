@@ -23,9 +23,11 @@ Thumbs.db
 .LSOverride
 
 # WinDivert files (user should download separately)
+# Exception: vendor/windivert/ is allowed for CI/build automation
 WinDivert.dll
 WinDivert*.sys
 windivert.h
+!vendor/windivert/WinDivert.dll
 
 # Release artifacts (optional - uncomment to commit release zips)
 # release/
