@@ -5,8 +5,7 @@ let isScanning = false;
 window.addEventListener('DOMContentLoaded', () => {
     loadInstances();
     loadScannerVersion();
-    // Start with slower polling, will speed up during scanning
-    startStatusPolling(2000);
+    // Don't start polling until a scan is started - polling will be initiated by startScan()
 });
 
 function startStatusPolling(interval) {
@@ -47,18 +46,21 @@ async function startScan() {
         
         if (result.error) {
             isScanning = false;
-            startStatusPolling(2000); // Back to slower polling
+            stopStatusPolling(); // Stop polling on error
             status.className = 'status error';
             status.innerHTML = `<strong>Error:</strong> ${result.error}`;
             button.disabled = false;
             button.textContent = 'Scan Network';
         } else {
-            // Start checking scan status immediately
+            // Start polling for scan status (will be stopped when scan completes)
+            isScanning = true;
+            startStatusPolling(300);
+            // Do initial check immediately
             checkScanStatus();
         }
     } catch (error) {
         isScanning = false;
-        startStatusPolling(2000); // Back to slower polling
+        stopStatusPolling(); // Stop polling on error
         status.className = 'status error';
         status.innerHTML = `<strong>Error:</strong> ${error.message}`;
         button.disabled = false;
@@ -74,14 +76,9 @@ async function checkScanStatus() {
         const status = document.getElementById('status');
         const button = document.getElementById('scanButton');
         
-        // Debug: log scan status for troubleshooting
-        if (data.scan) {
-            console.log('Scan status:', data.scan.status, 'Progress:', data.scan.progress);
-        }
-        
         if (data.scan) {
             if (data.scan.status === 'scanning') {
-                // Switch to faster polling during scanning (every 300ms for smooth updates)
+                // Continue polling during scanning (every 300ms for smooth updates)
                 if (!isScanning) {
                     isScanning = true;
                     startStatusPolling(300);
@@ -119,10 +116,10 @@ async function checkScanStatus() {
                     ${progressBar}
                 `;
             } else if (data.scan.status === 'completed') {
-                // Switch back to slower polling when done
+                // Stop polling when scan is completed
                 if (isScanning) {
                     isScanning = false;
-                    startStatusPolling(2000);
+                    stopStatusPolling();
                 }
                 
                 status.style.display = 'block';
@@ -139,10 +136,10 @@ async function checkScanStatus() {
                 // Always display instances (will show "No instances" if empty)
                 displayInstances(instances);
             } else if (data.scan.status === 'error') {
-                // Switch back to slower polling on error
+                // Stop polling on error
                 if (isScanning) {
                     isScanning = false;
-                    startStatusPolling(2000);
+                    stopStatusPolling();
                 }
                 
                 status.style.display = 'block';
@@ -151,24 +148,36 @@ async function checkScanStatus() {
                 button.disabled = false;
                 button.textContent = 'Scan Network';
             } else {
-                // Idle - switch back to slower polling
+                // Idle - stop polling (no active scan)
                 if (isScanning) {
                     isScanning = false;
-                    startStatusPolling(2000);
+                    stopStatusPolling();
                 }
                 
                 status.style.display = 'none';
                 button.disabled = false;
                 button.textContent = 'Scan Network';
             }
+        } else {
+            // No scan status - stop polling if it was running
+            if (isScanning) {
+                isScanning = false;
+                stopStatusPolling();
+            }
         }
         
-        // Always update instances list
+        // Update instances list only if we have instances
         if (data.instances && data.instances.length > 0) {
             displayInstances(data.instances);
+        } else if (data.scan && data.scan.status === 'completed') {
+            // Show "no instances" message when scan completes with no results
+            displayNoInstances();
         }
     } catch (error) {
         console.error('Error checking scan status:', error);
+        // Stop polling on error to prevent infinite retries
+        stopStatusPolling();
+        isScanning = false;
     }
 }
 
@@ -218,40 +227,53 @@ function displayNoInstances() {
     container.innerHTML = '<div class="no-instances">No instances discovered yet. Click "Scan Network" to search.</div>';
 }
 
+// Track retry attempts to prevent infinite loop
+let versionLoadRetries = 0;
+const MAX_VERSION_RETRIES = 3;
+let versionLoadAttempted = false;
+
 async function loadScannerVersion() {
-    console.log('loadScannerVersion called');
+    // Only attempt to load version once (on page load)
+    if (versionLoadAttempted) {
+        return;
+    }
+    versionLoadAttempted = true;
+
     try {
         const versionEl = document.getElementById('scannerVersion');
         if (!versionEl) {
-            console.warn('Scanner version element not found, retrying...');
-            // Retry after a short delay
-            setTimeout(loadScannerVersion, 500);
-            return;
+            versionLoadRetries++;
+            if (versionLoadRetries < MAX_VERSION_RETRIES) {
+                // Retry after a short delay, max 3 times
+                setTimeout(() => {
+                    versionLoadAttempted = false;
+                    loadScannerVersion();
+                }, 500);
+                return;
+            } else {
+                console.error('Scanner version element not found after', MAX_VERSION_RETRIES, 'retries');
+                return;
+            }
         }
 
-        console.log('Fetching /api/status...');
         const response = await fetch('/api/status');
-        console.log('Response status:', response.status, response.ok);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const data = await response.json();
-        console.log('Version data received:', data);
         
         if (data && data.version) {
             versionEl.textContent = data.version;
-            console.log('Version set to:', data.version);
         } else {
-            console.warn('No version in response:', data);
             versionEl.textContent = 'Unknown';
         }
     } catch (error) {
         console.error('Error loading scanner version:', error);
         const versionEl = document.getElementById('scannerVersion');
         if (versionEl) {
-            versionEl.textContent = 'Error: ' + error.message;
+            versionEl.textContent = 'Error';
         }
     }
 }
