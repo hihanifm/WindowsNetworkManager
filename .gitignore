@@ -5,7 +5,7 @@
 
 # Go
 *.mod.sum
-go.sum
+# Note: go.sum should be committed for reproducible builds
 
 # IDE
 .vscode/
