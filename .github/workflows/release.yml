@@ -20,7 +20,7 @@ jobs:
           go-version: '1.21'
 
       - name: Install dependencies
-        run: go mod download
+        run: go mod download && go mod verify
 
       - name: Extract version from tag
         id: version
@@ -41,9 +41,11 @@ jobs:
         env:
           GOOS: windows
           GOARCH: amd64
+          CGO_ENABLED: 0
         run: |
-          go build -o WindowsNetworkManager.exe
+          go build -v -o WindowsNetworkManager.exe .
           ls -lh WindowsNetworkManager.exe
+          file WindowsNetworkManager.exe || true
 
       - name: Download WinDivert DLL
         run: |

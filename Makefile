@@ -1,4 +1,4 @@
-.PHONY: build clean install-deps test
+.PHONY: build clean install-deps test release
 
 # Build for Windows from macOS
 build:
@@ -33,10 +33,15 @@ test:
 	@echo "Running tests..."
 	@go test ./...
 
+# Build release package (EXE + DLL + ZIP)
+release:
+	@./build_release.sh $(VERSION)
+
 # Help
 help:
 	@echo "Available targets:"
 	@echo "  make build        - Build Windows executable (cross-compile)"
+	@echo "  make release      - Build release package with EXE, DLL, and ZIP (VERSION=2.0.0)"
 	@echo "  make clean        - Remove build artifacts"
 	@echo "  make install-deps - Install Go dependencies"
 	@echo "  make test         - Run tests"
