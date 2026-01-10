@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	CurrentVersion = "2.0.0"
+	CurrentVersion = "2.1.0"
 	ServiceName    = "WindowsNetworkManager"
 	DefaultUpdateURL = "https://api.github.com/repos/hihanifm/WindowsNetworkManager/releases/latest"
 )
