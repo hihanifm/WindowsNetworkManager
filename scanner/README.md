@@ -129,7 +129,7 @@ IP Address         Status     Delay (ms) URL
     "ip": "192.168.1.100",
     "port": 18080,
     "service": "WindowsNetworkManager",
-    "version": "2.2.0",
+    "version": "2.3.0",
     "is_running": true,
     "delay_ms": 100,
     "local_ips": ["192.168.1.100"]

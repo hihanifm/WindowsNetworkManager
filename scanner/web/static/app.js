@@ -1,11 +1,26 @@
 let refreshInterval;
+let isScanning = false;
 
 // Load instances on page load
 window.addEventListener('DOMContentLoaded', () => {
     loadInstances();
-    // Refresh every 2 seconds if scan is in progress
-    refreshInterval = setInterval(checkScanStatus, 2000);
+    // Start with slower polling, will speed up during scanning
+    startStatusPolling(2000);
 });
+
+function startStatusPolling(interval) {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+    refreshInterval = setInterval(checkScanStatus, interval);
+}
+
+function stopStatusPolling() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+}
 
 async function startScan() {
     const button = document.getElementById('scanButton');
@@ -13,9 +28,11 @@ async function startScan() {
     
     button.disabled = true;
     button.textContent = 'Scanning...';
+    isScanning = true;
+    startStatusPolling(300); // Fast polling during scan
     status.style.display = 'block';
     status.className = 'status scanning';
-    status.innerHTML = '<strong>Scanning network...</strong><div class="progress">This may take 10-15 seconds</div>';
+    status.innerHTML = '<strong>Scanning network...</strong><div class="progress">Initializing scan...</div>';
 
     try {
         const response = await fetch('/api/scan', {
@@ -28,15 +45,19 @@ async function startScan() {
         const result = await response.json();
         
         if (result.error) {
+            isScanning = false;
+            startStatusPolling(2000); // Back to slower polling
             status.className = 'status error';
             status.innerHTML = `<strong>Error:</strong> ${result.error}`;
             button.disabled = false;
             button.textContent = 'Scan Network';
         } else {
-            // Start checking scan status
+            // Start checking scan status immediately
             checkScanStatus();
         }
     } catch (error) {
+        isScanning = false;
+        startStatusPolling(2000); // Back to slower polling
         status.className = 'status error';
         status.innerHTML = `<strong>Error:</strong> ${error.message}`;
         button.disabled = false;
@@ -52,26 +73,89 @@ async function checkScanStatus() {
         const status = document.getElementById('status');
         const button = document.getElementById('scanButton');
         
+        // Debug: log scan status for troubleshooting
+        if (data.scan) {
+            console.log('Scan status:', data.scan.status, 'Progress:', data.scan.progress);
+        }
+        
         if (data.scan) {
             if (data.scan.status === 'scanning') {
+                // Switch to faster polling during scanning (every 300ms for smooth updates)
+                if (!isScanning) {
+                    isScanning = true;
+                    startStatusPolling(300);
+                }
+                
                 status.style.display = 'block';
                 status.className = 'status scanning';
-                status.innerHTML = `<strong>Scanning...</strong><div class="progress">${data.scan.progress || 'In progress'}</div>`;
+                const progressText = data.scan.progress || 'In progress...';
+                
+                // Extract percentage and IP counts from progress text
+                const progressMatch = progressText.match(/(\d+)\/(\d+).*?(\d+)%/);
+                let progressBar = '';
+                let percentage = 0;
+                
+                if (progressMatch) {
+                    const scanned = parseInt(progressMatch[1]);
+                    const total = parseInt(progressMatch[2]);
+                    percentage = parseInt(progressMatch[3]);
+                } else {
+                    // Fallback: show animated progress bar if we can't parse
+                    // This handles initial "Detecting network..." message
+                    percentage = 5; // Small initial progress
+                }
+                
+                progressBar = `
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" style="width: ${percentage}%"></div>
+                        <div class="progress-bar-text">${percentage > 0 ? percentage + '%' : ''}</div>
+                    </div>
+                `;
+                
+                status.innerHTML = `
+                    <strong>Scanning...</strong>
+                    <div class="progress">${progressText}</div>
+                    ${progressBar}
+                `;
             } else if (data.scan.status === 'completed') {
+                // Switch back to slower polling when done
+                if (isScanning) {
+                    isScanning = false;
+                    startStatusPolling(2000);
+                }
+                
                 status.style.display = 'block';
                 status.className = 'status';
-                status.innerHTML = `<strong>Scan Complete!</strong> Found ${data.scan.instances.length} instance(s)`;
+                
+                // Get instances from scan result or instances list
+                const instances = data.scan.instances || data.instances || [];
+                const instanceCount = instances.length;
+                
+                status.innerHTML = `<strong>Scan Complete!</strong> Found ${instanceCount} instance(s)`;
                 button.disabled = false;
                 button.textContent = 'Scan Network';
-                displayInstances(data.instances || data.scan.instances);
+                
+                // Always display instances (will show "No instances" if empty)
+                displayInstances(instances);
             } else if (data.scan.status === 'error') {
+                // Switch back to slower polling on error
+                if (isScanning) {
+                    isScanning = false;
+                    startStatusPolling(2000);
+                }
+                
                 status.style.display = 'block';
                 status.className = 'status error';
                 status.innerHTML = `<strong>Error:</strong> ${data.scan.error}`;
                 button.disabled = false;
                 button.textContent = 'Scan Network';
             } else {
-                // Idle
+                // Idle - switch back to slower polling
+                if (isScanning) {
+                    isScanning = false;
+                    startStatusPolling(2000);
+                }
+                
                 status.style.display = 'none';
                 button.disabled = false;
                 button.textContent = 'Scan Network';

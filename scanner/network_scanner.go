@@ -7,22 +7,31 @@ import (
 	"time"
 )
 
+// ProgressCallback is a function type for reporting scan progress
+type ProgressCallback func(scanned, total, found int, message string)
+
 // ScanNetwork scans the local network for WindowsNetworkManager instances
 func ScanNetwork(workers int, timeout time.Duration) ([]InstanceInfo, error) {
+	return ScanNetworkWithProgress(workers, timeout, nil)
+}
+
+// ScanNetworkWithProgress scans the local network with progress reporting
+func ScanNetworkWithProgress(workers int, timeout time.Duration, progressCallback ProgressCallback) ([]InstanceInfo, error) {
 	subnet, err := getLocalSubnet()
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect local subnet: %v", err)
 	}
-
-	// Note: Console output suppressed when called from web server
-	// (output is handled via web_server.go progress updates)
 
 	ipRange, err := parseSubnet(subnet)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse subnet: %v", err)
 	}
 
-	return scanIPRange(ipRange, DefaultPort, workers, timeout)
+	if progressCallback != nil {
+		progressCallback(0, len(ipRange), 0, fmt.Sprintf("Detected network subnet: %s", subnet))
+	}
+
+	return scanIPRange(ipRange, DefaultPort, workers, timeout, progressCallback)
 }
 
 // getLocalSubnet detects the local network subnet
@@ -117,7 +126,7 @@ func parseSubnet(subnet string) ([]string, error) {
 }
 
 // scanIPRange scans a range of IP addresses in parallel
-func scanIPRange(ipRange []string, port int, workers int, timeout time.Duration) ([]InstanceInfo, error) {
+func scanIPRange(ipRange []string, port int, workers int, timeout time.Duration, progressCallback ProgressCallback) ([]InstanceInfo, error) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var instances []InstanceInfo
@@ -134,11 +143,43 @@ func scanIPRange(ipRange []string, port int, workers int, timeout time.Duration)
 	// Progress tracking
 	var scanned int
 	var found int
-	progressTicker := time.NewTicker(500 * time.Millisecond)
+	totalIPs := len(ipRange)
+	
+	// Progress reporting ticker - updates every 200ms for smooth progress
+	progressTicker := time.NewTicker(200 * time.Millisecond)
 	defer progressTicker.Stop()
-
-	// Progress reporting is handled by web_server.go when called from web interface
-	// Console output suppressed for cleaner web experience
+	
+	// Channel to signal completion
+	done := make(chan bool)
+	
+	// Progress reporter goroutine
+	go func() {
+		for {
+			select {
+			case <-progressTicker.C:
+				mu.Lock()
+				currentScanned := scanned
+				currentFound := found
+				mu.Unlock()
+				
+				if progressCallback != nil && currentScanned <= totalIPs {
+					var message string
+					if currentScanned < totalIPs {
+						percentage := (currentScanned * 100) / totalIPs
+						message = fmt.Sprintf("Scanning network... %d/%d IPs checked (%d%%) - %d instance(s) found", 
+							currentScanned, totalIPs, percentage, currentFound)
+					} else {
+						// Final update when all IPs are scanned
+						message = fmt.Sprintf("Finalizing scan... %d/%d IPs checked (100%%) - %d instance(s) found", 
+							currentScanned, totalIPs, currentFound)
+					}
+					progressCallback(currentScanned, totalIPs, currentFound, message)
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
 
 	// Start workers
 	for i := 0; i < workers; i++ {
@@ -159,7 +200,26 @@ func scanIPRange(ipRange []string, port int, workers int, timeout time.Duration)
 	}
 
 	wg.Wait()
+	
+	// Get final counts with lock
+	mu.Lock()
+	finalScanned := scanned
+	finalFound := found
+	mu.Unlock()
+	
+	// Send final progress update (100%) before stopping ticker
+	if progressCallback != nil {
+		finalMessage := fmt.Sprintf("Scanning network... %d/%d IPs checked (100%%) - %d instance(s) found", 
+			finalScanned, totalIPs, finalFound)
+		progressCallback(finalScanned, totalIPs, finalFound, finalMessage)
+	}
+	
+	// Stop ticker and signal completion
 	progressTicker.Stop()
+	done <- true
+	
+	// Small delay to let progress reporter exit cleanly
+	time.Sleep(100 * time.Millisecond)
 
 	return instances, nil
 }

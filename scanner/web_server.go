@@ -109,34 +109,61 @@ func runScan(workers int, timeout time.Duration) {
 	scanMutex.Lock()
 	currentScan = &ScanResult{
 		Status:   "scanning",
-		Progress: "Detecting network...",
+		Progress: "Initializing scan...",
 	}
 	scanMutex.Unlock()
 
-	// Progress updates handled via status polling from frontend
+	// Channel to signal scan completion so we can stop progress updates
+	scanComplete := make(chan struct{})
+	
+	// Create progress callback to update scan progress in real-time
+	progressCallback := func(scanned, total, found int, message string) {
+		// Check if scan has already completed to avoid race conditions
+		select {
+		case <-scanComplete:
+			// Scan already completed, ignore this callback
+			return
+		default:
+		}
+		
+		scanMutex.Lock()
+		if currentScan != nil && currentScan.Status == "scanning" {
+			currentScan.Progress = message
+		}
+		scanMutex.Unlock()
+	}
 
-	// Run the actual scan
-	instances, err := ScanNetwork(workers, timeout)
+	// Run the actual scan with progress callback
+	instances, err := ScanNetworkWithProgress(workers, timeout, progressCallback)
+
+	// Signal that scan is complete to stop progress callbacks
+	close(scanComplete)
+	
+	// Small delay to ensure any final progress callbacks have completed
+	time.Sleep(150 * time.Millisecond)
 
 	scanMutex.Lock()
+	defer scanMutex.Unlock()
+	
 	if err != nil {
 		currentScan = &ScanResult{
 			Status: "error",
 			Error:  err.Error(),
 		}
+		log.Printf("Scan failed: %v", err)
 	} else {
 		currentScan = &ScanResult{
 			Status:      "completed",
-			Progress:    fmt.Sprintf("Found %d instance(s)", len(instances)),
+			Progress:    fmt.Sprintf("Scan complete! Found %d instance(s)", len(instances)),
 			Instances:   instances,
 			CompletedAt: time.Now(),
 		}
+		log.Printf("Scan completed successfully: found %d instance(s)", len(instances))
 		// Update instances list
 		instancesMutex.Lock()
 		instancesList = instances
 		instancesMutex.Unlock()
 	}
-	scanMutex.Unlock()
 }
 
 func handleInstances(w http.ResponseWriter, r *http.Request) {
@@ -149,6 +176,11 @@ func handleInstances(w http.ResponseWriter, r *http.Request) {
 	instancesMutex.RLock()
 	instances := instancesList
 	instancesMutex.RUnlock()
+
+	// If scan is completed, prefer instances from scan result
+	if scanStatus != nil && scanStatus.Status == "completed" && len(scanStatus.Instances) > 0 {
+		instances = scanStatus.Instances
+	}
 
 	response := map[string]interface{}{
 		"scan":      scanStatus,
