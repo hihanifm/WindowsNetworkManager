@@ -47,27 +47,16 @@ jobs:
           ls -lh WindowsNetworkManager.exe
           file WindowsNetworkManager.exe || true
 
-      - name: Download WinDivert DLL
+      - name: Copy WinDivert DLL from vendor
         run: |
-          echo "Downloading WinDivert 2.2.0..."
-          # Try the WinDivert download URL - adjust if the URL format is different
-          curl -L -f -o windivert.zip "https://www.reqrypt.org/download/WinDivert-2.2.0-A/WinDivert-2.2.0-A.zip" || {
-            echo "Error: Failed to download WinDivert. Please verify the download URL."
-            echo "Expected URL: https://www.reqrypt.org/download/WinDivert-2.2.0-A/WinDivert-2.2.0-A.zip"
-            exit 1
-          }
-          unzip -q windivert.zip || {
-            echo "Error: Failed to extract WinDivert archive"
-            exit 1
-          }
-          if [ -f "WinDivert-2.2.0-A/x64/WinDivert.dll" ]; then
-            cp WinDivert-2.2.0-A/x64/WinDivert.dll ./WinDivert.dll
+          echo "Using WinDivert.dll from vendor directory..."
+          if [ -f "vendor/windivert/WinDivert.dll" ]; then
+            cp vendor/windivert/WinDivert.dll ./WinDivert.dll
             ls -lh WinDivert.dll
-            rm -rf windivert.zip WinDivert-2.2.0-A
+            echo "✓ WinDivert.dll copied from vendor directory"
           else
-            echo "Error: WinDivert.dll not found in expected location"
-            echo "Archive contents:"
-            find . -name "*.dll" -o -name "*.sys" || true
+            echo "ERROR: WinDivert.dll not found in vendor/windivert/"
+            echo "Please ensure WinDivert.dll is committed in vendor/windivert/"
             exit 1
           fi
 

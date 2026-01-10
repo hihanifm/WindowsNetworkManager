@@ -31,30 +31,18 @@ fi
 echo "✓ Built WindowsNetworkManager.exe"
 echo ""
 
-# Download WinDivert DLL
-echo "Downloading WinDivert DLL..."
-WINVERT_URL="https://www.reqrypt.org/download/WinDivert-2.2.0-A/WinDivert-2.2.0-A.zip"
-TEMP_ZIP="/tmp/windivert.zip"
-
-if curl -L -f -o "$TEMP_ZIP" "$WINVERT_URL" 2>/dev/null; then
-    TEMP_DIR=$(mktemp -d)
-    unzip -q "$TEMP_ZIP" -d "$TEMP_DIR"
-    
-    if [ -f "$TEMP_DIR/WinDivert-2.2.0-A/x64/WinDivert.dll" ]; then
-        cp "$TEMP_DIR/WinDivert-2.2.0-A/x64/WinDivert.dll" "$RELEASE_DIR/WinDivert.dll"
-        echo "✓ Downloaded WinDivert.dll"
-    else
-        echo "WARNING: WinDivert.dll not found in expected location"
-        echo "Please download manually from: https://www.reqrypt.org/windivert.html"
-        echo "Place WinDivert.dll in the $RELEASE_DIR/ directory"
-        exit 1
-    fi
-    
-    rm -rf "$TEMP_DIR" "$TEMP_ZIP"
+# Copy WinDivert DLL from vendor directory
+echo "Copying WinDivert DLL from vendor directory..."
+if [ -f "vendor/windivert/WinDivert.dll" ]; then
+    cp vendor/windivert/WinDivert.dll "$RELEASE_DIR/WinDivert.dll"
+    echo "✓ Copied WinDivert.dll from vendor directory"
+elif [ -f "WinDivert.dll" ]; then
+    cp WinDivert.dll "$RELEASE_DIR/WinDivert.dll"
+    echo "✓ Copied WinDivert.dll from current directory"
 else
-    echo "WARNING: Failed to download WinDivert automatically"
-    echo "Please download WinDivert.dll manually from: https://www.reqrypt.org/windivert.html"
-    echo "Place WinDivert.dll in the $RELEASE_DIR/ directory and run this script again"
+    echo "WARNING: WinDivert.dll not found in vendor/windivert/ or current directory"
+    echo "Please ensure WinDivert.dll is in vendor/windivert/ directory"
+    echo "Or download from: https://www.reqrypt.org/windivert.html"
     exit 1
 fi
 echo ""
