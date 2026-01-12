@@ -1,7 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -17,15 +21,68 @@ type PacketEngine struct {
 	wg         sync.WaitGroup
 }
 
+// initWinDivertDLL initializes the WinDivert DLL by loading it from the executable directory
+func initWinDivertDLL() error {
+	// Get executable directory
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %v", err)
+	}
+	exeDir := filepath.Dir(exePath)
+	
+	// Construct DLL path - DLL should be in the same directory as the executable
+	dllPath := filepath.Join(exeDir, "WinDivert.dll")
+	
+	// Check if DLL file exists
+	if _, err := os.Stat(dllPath); os.IsNotExist(err) {
+		return fmt.Errorf("WinDivert.dll not found at: %s. Please ensure WinDivert.dll is in the same directory as WindowsNetworkManager.exe", dllPath)
+	}
+	
+	// For LoadDLL, we need to provide both 64-bit and 32-bit paths
+	var path64, path32 string
+	
+	switch runtime.GOARCH {
+	case "amd64":
+		// x64 (AMD64) architecture
+		path64 = dllPath
+		path32 = dllPath // Required parameter, but won't be used
+	case "arm64":
+		// ARM64 architecture - also 64-bit
+		path64 = dllPath
+		path32 = dllPath
+	default:
+		return fmt.Errorf("unsupported architecture: %s (only amd64 and arm64 are supported)", runtime.GOARCH)
+	}
+	
+	// Load the DLL
+	if err := godivert.LoadDLL(path64, path32); err != nil {
+		return fmt.Errorf("failed to load WinDivert DLL from %s (architecture: %s): %v. Please verify the DLL is correct for your system architecture", dllPath, runtime.GOARCH, err)
+	}
+	
+	log.Printf("WinDivert DLL loaded successfully from: %s (architecture: %s)", dllPath, runtime.GOARCH)
+	return nil
+}
+
 // NewPacketEngine creates a new packet engine instance
 func NewPacketEngine(delay time.Duration) (*PacketEngine, error) {
+	// Ensure DLL is loaded before creating handle
+	if !godivert.IsDLLLoaded() {
+		if err := initWinDivertDLL(); err != nil {
+			return nil, fmt.Errorf("WinDivert DLL not initialized: %v", err)
+		}
+	}
+	
 	// WinDivert filter: capture all outbound packets
 	// "outbound" captures all outgoing packets
 	filter := "outbound"
 
 	handle, err := godivert.NewWinDivertHandle(filter)
 	if err != nil {
-		return nil, err
+		// Provide more helpful error message
+		if err.Error() == "WinDivert DLL not loaded" {
+			return nil, fmt.Errorf("WinDivert DLL not loaded. Please ensure WinDivert.dll is in the same directory as WindowsNetworkManager.exe. Error: %v", err)
+		}
+		return nil, fmt.Errorf("failed to create WinDivert handle: %v. Make sure you are running as Administrator", err)
 	}
 
 	return &PacketEngine{
