@@ -1,12 +1,12 @@
 let statsInterval;
-
 let upgradeStatusInterval;
+let isServiceRunning = false;
 
 // Load current configuration on page load
 window.addEventListener('DOMContentLoaded', () => {
     loadConfig();
-    startStatsUpdates();
     loadUpgradeInfo();
+    // Don't start stats updates yet - wait for config to load
 });
 
 async function loadConfig() {
@@ -14,8 +14,18 @@ async function loadConfig() {
         const response = await fetch('/api/config');
         const config = await response.json();
         document.getElementById('delay').value = config.delay_ms || 0;
-        updateStatus(config.is_running);
-        updateButtonStates(config.is_running);
+        isServiceRunning = config.is_running || false;
+        updateStatus(isServiceRunning);
+        updateButtonStates(isServiceRunning);
+        
+        // Start or stop stats updates based on service status
+        if (isServiceRunning) {
+            startStatsUpdates();
+        } else {
+            stopStatsUpdates();
+            // Still update stats once to show current values (even if stopped)
+            updateStats();
+        }
     } catch (error) {
         showError('Failed to load configuration: ' + error.message);
     }
@@ -45,8 +55,17 @@ async function updateDelay() {
         } else {
             showError(''); // Clear error
             // Update status and button states based on response
-            updateStatus(result.is_running);
-            updateButtonStates(result.is_running);
+            isServiceRunning = result.is_running || false;
+            updateStatus(isServiceRunning);
+            updateButtonStates(isServiceRunning);
+            
+            // Start/stop stats updates based on service status
+            if (isServiceRunning) {
+                startStatsUpdates();
+            } else {
+                stopStatsUpdates();
+            }
+            
             console.log('Delay updated to', delayMs, 'ms');
         }
     } catch (error) {
@@ -62,8 +81,10 @@ async function startInterception() {
         if (result.error) {
             showError(result.error);
         } else {
+            isServiceRunning = true;
             updateStatus(true);
             updateButtonStates(true);
+            startStatsUpdates(); // Start polling stats when service starts
             showError(''); // Clear error
         }
     } catch (error) {
@@ -79,8 +100,12 @@ async function stopInterception() {
         if (result.error) {
             showError(result.error);
         } else {
+            isServiceRunning = false;
             updateStatus(false);
             updateButtonStates(false);
+            stopStatsUpdates(); // Stop polling stats when service stops
+            // Update stats once more to show final values
+            updateStats();
             showError(''); // Clear error
         }
     } catch (error) {
@@ -113,8 +138,30 @@ function updateButtonStates(isRunning) {
 }
 
 function startStatsUpdates() {
+    // Clear any existing interval
+    stopStatsUpdates();
+    
+    // Only start if service is running
+    if (!isServiceRunning) {
+        return;
+    }
+    
     updateStats(); // Initial update
-    statsInterval = setInterval(updateStats, 1000); // Update every second
+    statsInterval = setInterval(() => {
+        // Check if service is still running before updating
+        if (isServiceRunning) {
+            updateStats();
+        } else {
+            stopStatsUpdates();
+        }
+    }, 1000); // Update every second
+}
+
+function stopStatsUpdates() {
+    if (statsInterval) {
+        clearInterval(statsInterval);
+        statsInterval = null;
+    }
 }
 
 async function updateStats() {

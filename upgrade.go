@@ -18,33 +18,33 @@ import (
 
 const (
 	// Use CurrentVersion alias for backward compatibility
-	CurrentVersion = version.Version
-	ServiceName    = version.ServiceName
+	CurrentVersion   = version.Version
+	ServiceName      = version.ServiceName
 	DefaultUpdateURL = "https://api.github.com/repos/hihanifm/WindowsNetworkManager/releases/latest"
 )
 
 var (
-	upgradeMutex    sync.RWMutex
-	upgradeStatus   *UpgradeStatus
-	upgradeManager  *UpgradeManager
+	upgradeMutex   sync.RWMutex
+	upgradeStatus  *UpgradeStatus
+	upgradeManager *UpgradeManager
 )
 
 type UpgradeStatus struct {
-	Status      string    `json:"status"` // "idle", "checking", "downloading", "installing", "completed", "error"
-	Progress    string    `json:"progress"`
-	CurrentVersion string `json:"current_version"`
-	LatestVersion  string `json:"latest_version,omitempty"`
-	UpdateAvailable bool  `json:"update_available,omitempty"`
-	DownloadURL     string `json:"download_url,omitempty"`
-	Error       string    `json:"error,omitempty"`
-	CompletedAt time.Time `json:"completed_at,omitempty"`
+	Status          string    `json:"status"` // "idle", "checking", "downloading", "installing", "completed", "error"
+	Progress        string    `json:"progress"`
+	CurrentVersion  string    `json:"current_version"`
+	LatestVersion   string    `json:"latest_version,omitempty"`
+	UpdateAvailable bool      `json:"update_available,omitempty"`
+	DownloadURL     string    `json:"download_url,omitempty"`
+	Error           string    `json:"error,omitempty"`
+	CompletedAt     time.Time `json:"completed_at,omitempty"`
 }
 
 type UpgradeManager struct {
-	exePath      string
-	exeDir       string
-	backupPath   string
-	tempPath     string
+	exePath    string
+	exeDir     string
+	backupPath string
+	tempPath   string
 }
 
 type GitHubRelease struct {
@@ -72,7 +72,7 @@ func initUpgradeManager() error {
 	}
 
 	upgradeStatus = &UpgradeStatus{
-		Status:        "idle",
+		Status:         "idle",
 		CurrentVersion: CurrentVersion,
 	}
 
@@ -123,7 +123,7 @@ func CheckForUpdates(updateURL string) (*UpgradeStatus, error) {
 
 	// Extract version from tag (remove 'v' prefix if present)
 	latestVersion := strings.TrimPrefix(release.TagName, "v")
-	
+
 	// Find Windows executable asset
 	var downloadURL string
 	for _, asset := range release.Assets {
