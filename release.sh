@@ -126,6 +126,7 @@ BATCH_FILES=(
     "check_admin_privileges.bat"
     "run_manual.bat"
     "run_manual_port.bat"
+    "install_windivert_driver.bat"
 )
 
 for bat_file in "${BATCH_FILES[@]}"; do
