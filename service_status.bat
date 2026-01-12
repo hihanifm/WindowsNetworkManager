@@ -76,17 +76,33 @@ echo.
 :: 5. Check if DLL exists
 echo [5] WinDivert.dll Check:
 echo ----------------------------------------
-for /f "tokens=2 delims==" %%a in ('sc qc %SERVICE_NAME% ^| findstr "BINARY_PATH_NAME"') do (
-    for %%b in ("%%a") do set EXE_DIR=%%~dpb
-    if exist "!EXE_DIR!WinDivert.dll" (
-        echo WinDivert.dll found: YES
-        echo Location: !EXE_DIR!WinDivert.dll
-        for %%c in ("!EXE_DIR!WinDivert.dll") do (
-            echo File size: %%~zc bytes
+set EXE_DIR=
+set DLL_FOUND=0
+for /f "tokens=2 delims==" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "BINARY_PATH_NAME"') do (
+    set "EXE_PATH=%%a"
+    for %%b in ("%%a") do set "EXE_DIR=%%~dpb"
+    echo Service executable directory: !EXE_DIR!
+    if defined EXE_DIR (
+        set "DLL_PATH=!EXE_DIR!WinDivert.dll"
+        if exist "!DLL_PATH!" (
+            echo WinDivert.dll found: YES
+            echo Location: !DLL_PATH!
+            for %%c in ("!DLL_PATH!") do (
+                echo File size: %%~zc bytes
+                echo Modified: %%~tc
+            )
+            set DLL_FOUND=1
+        ) else (
+            echo WinDivert.dll found: NO - ERROR!
+            echo Expected location: !DLL_PATH!
         )
     ) else (
-        echo WinDivert.dll found: NO - ERROR!
-        echo Expected location: !EXE_DIR!WinDivert.dll
+        echo ERROR: Could not determine executable directory
+    )
+)
+if !DLL_FOUND! equ 0 (
+    if not defined EXE_DIR (
+        echo Service may not be installed or BINARY_PATH_NAME not found
     )
 )
 echo.
@@ -94,18 +110,25 @@ echo.
 :: 6. Check if web files exist
 echo [6] Web Files Check:
 echo ----------------------------------------
-for /f "tokens=2 delims==" %%a in ('sc qc %SERVICE_NAME% ^| findstr "BINARY_PATH_NAME"') do (
-    for %%b in ("%%a") do set EXE_DIR=%%~dpb
-    if exist "!EXE_DIR!web\index.html" (
+if defined EXE_DIR (
+    set "WEB_INDEX=!EXE_DIR!web\index.html"
+    set "WEB_JS=!EXE_DIR!web\static\app.js"
+    if exist "!WEB_INDEX!" (
         echo web\index.html: EXISTS
+        for %%f in ("!WEB_INDEX!") do echo   Size: %%~zf bytes
     ) else (
         echo web\index.html: MISSING - ERROR!
+        echo   Expected: !WEB_INDEX!
     )
-    if exist "!EXE_DIR!web\static\app.js" (
+    if exist "!WEB_JS!" (
         echo web\static\app.js: EXISTS
+        for %%f in ("!WEB_JS!") do echo   Size: %%~zf bytes
     ) else (
         echo web\static\app.js: MISSING - ERROR!
+        echo   Expected: !WEB_JS!
     )
+) else (
+    echo Cannot check web files - executable directory not determined
 )
 echo.
 
