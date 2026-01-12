@@ -1,11 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"os"
-	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -14,88 +10,24 @@ import (
 
 // PacketEngine handles packet interception and delay
 type PacketEngine struct {
-	handle    *godivert.WinDivertHandle
-	delay     time.Duration
+	handle     *godivert.WinDivertHandle
+	delay      time.Duration
 	delayMutex sync.RWMutex
-	stopChan  chan struct{}
-	wg        sync.WaitGroup
-}
-
-// initWinDivertDLL initializes the WinDivert DLL by loading it from the executable directory
-func initWinDivertDLL() error {
-	// Get executable directory
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get executable path: %v", err)
-	}
-	exeDir := filepath.Dir(exePath)
-	
-	// Construct DLL path - DLL should be in the same directory as the executable
-	// This works for both regular execution and service mode
-	dllPath := filepath.Join(exeDir, "WinDivert.dll")
-	
-	// For LoadDLL, we need to provide both 64-bit and 32-bit paths
-	// Note: The godivert library checks runtime.GOARCH == "amd64" to choose path64 vs path32
-	// For ARM64, it will incorrectly choose path32, so we need to work around this
-	var path64, path32 string
-	
-	switch runtime.GOARCH {
-	case "amd64":
-		// x64 (AMD64) architecture
-		path64 = dllPath
-		path32 = dllPath // Required parameter, but won't be used
-	case "arm64":
-		// ARM64 architecture - also 64-bit, but library doesn't handle it correctly
-		// Pass the DLL path as path64 since ARM64 needs 64-bit DLL
-		// Note: WinDivert may not have official ARM64 support - user needs ARM64 DLL
-		path64 = dllPath
-		path32 = dllPath
-		log.Printf("Warning: Running on ARM64 - ensure WinDivert.dll is ARM64-compatible")
-	default:
-		// 32-bit architecture (386)
-		path64 = dllPath // Required parameter, but won't be used
-		path32 = dllPath
-	}
-	
-	// Load the DLL
-	// Note: For ARM64, the library will use path32 due to its logic, but we've set both to the same path
-	// This is a workaround until the library properly supports ARM64
-	appLogger.Debug("Loading WinDivert DLL from: %s (architecture: %s)", dllPath, runtime.GOARCH)
-	if err := godivert.LoadDLL(path64, path32); err != nil {
-		return fmt.Errorf("failed to load WinDivert DLL from %s (architecture: %s): %v", dllPath, runtime.GOARCH, err)
-	}
-	
-	appLogger.Info("WinDivert DLL loaded successfully from: %s (architecture: %s)", dllPath, runtime.GOARCH)
-	return nil
+	stopChan   chan struct{}
+	wg         sync.WaitGroup
 }
 
 // NewPacketEngine creates a new packet engine instance
 func NewPacketEngine(delay time.Duration) (*PacketEngine, error) {
-	appLogger.Debug("Creating new packet engine with delay: %v", delay)
-	
-	// Ensure DLL is loaded before creating handle
-	if !godivert.IsDLLLoaded() {
-		appLogger.Debug("WinDivert DLL not loaded, initializing...")
-		if err := initWinDivertDLL(); err != nil {
-			appLogger.Error("WinDivert DLL initialization failed: %v", err)
-			return nil, fmt.Errorf("WinDivert DLL not initialized: %v", err)
-		}
-	} else {
-		appLogger.Debug("WinDivert DLL already loaded")
-	}
-	
 	// WinDivert filter: capture all outbound packets
 	// "outbound" captures all outgoing packets
 	filter := "outbound"
-	appLogger.Debug("Creating WinDivert handle with filter: %s", filter)
-	
+
 	handle, err := godivert.NewWinDivertHandle(filter)
 	if err != nil {
-		appLogger.Error("Failed to create WinDivert handle: %v", err)
 		return nil, err
 	}
 
-	appLogger.Info("Packet engine created successfully")
 	return &PacketEngine{
 		handle:   handle,
 		delay:    delay,
@@ -106,10 +38,8 @@ func NewPacketEngine(delay time.Duration) (*PacketEngine, error) {
 // SetDelay updates the delay duration
 func (pe *PacketEngine) SetDelay(delay time.Duration) {
 	pe.delayMutex.Lock()
-	oldDelay := pe.delay
 	pe.delay = delay
 	pe.delayMutex.Unlock()
-	appLogger.Debug("Packet engine delay updated: %v -> %v", oldDelay, delay)
 }
 
 // GetDelay returns the current delay duration
@@ -121,39 +51,26 @@ func (pe *PacketEngine) GetDelay() time.Duration {
 
 // Start begins packet interception and delay processing
 func (pe *PacketEngine) Start() {
-	pe.delayMutex.RLock()
-	delay := pe.delay
-	pe.delayMutex.RUnlock()
-	
-	appLogger.Info("Starting packet interception engine with delay: %v", delay)
-	appLogger.Debug("WinDivert handle initialized, starting packet capture")
+	log.Println("Starting packet interception engine...")
 
 	// Start packet processing goroutine
 	pe.wg.Add(1)
 	go pe.processPackets()
 
-	appLogger.Debug("Packet processing goroutine started")
-	
 	// Wait for stop signal
 	<-pe.stopChan
-	appLogger.Debug("Stop signal received, waiting for goroutines to finish")
 	pe.wg.Wait()
-	appLogger.Debug("All packet processing goroutines finished")
 }
 
 // Stop stops packet interception
 func (pe *PacketEngine) Stop() {
-	appLogger.Info("Stopping packet interception engine...")
+	log.Println("Stopping packet interception engine...")
 	close(pe.stopChan)
-	appLogger.Debug("Stop channel closed, waiting for goroutines")
 	pe.wg.Wait()
-	appLogger.Debug("All goroutines stopped")
-	
+
 	if pe.handle != nil {
 		pe.handle.Close()
-		appLogger.Info("Packet interception engine stopped successfully")
-	} else {
-		appLogger.Debug("Packet engine handle was nil")
+		log.Println("Packet interception engine stopped")
 	}
 }
 
@@ -168,7 +85,7 @@ func (pe *PacketEngine) processPackets() {
 	}
 
 	packetQueue := make(chan *delayedPacket, 1000)
-	
+
 	// Goroutine to send delayed packets
 	pe.wg.Add(1)
 	go func() {
@@ -216,10 +133,9 @@ func (pe *PacketEngine) processPackets() {
 				// Check if it's a timeout or stop condition
 				select {
 				case <-pe.stopChan:
-					appLogger.Debug("Packet receive stopped due to stop signal")
 					return
 				default:
-					appLogger.Error("Error receiving packet: %v", err)
+					log.Printf("Error receiving packet: %v", err)
 					time.Sleep(10 * time.Millisecond) // Brief pause on error
 					continue
 				}
@@ -227,7 +143,7 @@ func (pe *PacketEngine) processPackets() {
 
 			// Get current delay
 			delay := pe.GetDelay()
-			
+
 			if delay > 0 {
 				// Queue packet for delayed sending
 				dp := &delayedPacket{
@@ -240,7 +156,7 @@ func (pe *PacketEngine) processPackets() {
 					// Packet queued successfully
 				default:
 					// Queue full, send immediately to avoid blocking
-					appLogger.Error("Packet queue full, sending immediately (queue size: %d)", len(packetQueue))
+					log.Println("Warning: Packet queue full, sending immediately")
 					pe.sendPacket(packet)
 				}
 			} else {
@@ -257,10 +173,10 @@ func (pe *PacketEngine) sendPacket(packet *godivert.Packet) {
 	// try: packet.Send(pe.handle) instead
 	_, err := pe.handle.Send(packet)
 	if err != nil {
-		appLogger.Error("Error sending packet: %v", err)
+		log.Printf("Error sending packet: %v", err)
 		return
 	}
-	
+
 	// Get packet length for statistics
 	// The packet structure may have Raw, Bytes, or Data field
 	// We'll use a safe approach to get the length
@@ -268,8 +184,7 @@ func (pe *PacketEngine) sendPacket(packet *godivert.Packet) {
 	if packet.Raw != nil {
 		packetLen = uint64(len(packet.Raw))
 	}
-	
+
 	// Update statistics
 	updateStats(1, packetLen)
 }
-

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/kardianos/service"
-	"WindowsNetworkManager/version"
 )
 
 var (
@@ -24,8 +23,6 @@ type program struct {
 
 func (p *program) Start(s service.Service) error {
 	serviceLogger.Info("Windows Network Manager service starting...")
-	appLogger.useServiceLogger = true
-	appLogger.Info("Version: %s", version.Version)
 	p.exit = make(chan struct{})
 
 	// Start the application in a goroutine
@@ -59,69 +56,59 @@ func (p *program) Stop(s service.Service) error {
 }
 
 func (p *program) run() {
-	appLogger.Info("Service run() started")
-	
 	// Get executable directory for web files
 	exePath, err := os.Executable()
 	if err != nil {
-		appLogger.Error("Failed to get executable path: %v", err)
 		log.Fatalf("Failed to get executable path: %v", err)
 	}
 	exeDir := filepath.Dir(exePath)
-	appLogger.Debug("Executable directory: %s", exeDir)
 
 	// Set working directory to executable directory
 	if err := os.Chdir(exeDir); err != nil {
-		appLogger.Error("Failed to change directory: %v", err)
-	} else {
-		appLogger.Debug("Working directory set to: %s", exeDir)
+		log.Printf("Warning: Failed to change directory: %v", err)
 	}
 
 	// Initialize packet stats
 	packetStats.StartTime = time.Now()
-	appLogger.Debug("Packet stats initialized")
 
 	// Initialize upgrade manager
 	if err := initUpgradeManager(); err != nil {
-		appLogger.Error("Failed to initialize upgrade manager: %v", err)
-	} else {
-		appLogger.Debug("Upgrade manager initialized")
+		serviceLogger.Error("Failed to initialize upgrade manager: ", err)
 	}
 
-	// Setup HTTP routes with logging middleware
-	http.HandleFunc("/", logHTTPMiddleware(serveIndex))
-	http.HandleFunc("/api/config", logHTTPMiddleware(handleConfig))
-	http.HandleFunc("/api/stats", logHTTPMiddleware(handleStats))
-	http.HandleFunc("/api/start", logHTTPMiddleware(handleStart))
-	http.HandleFunc("/api/stop", logHTTPMiddleware(handleStop))
-	http.HandleFunc("/api/network", logHTTPMiddleware(handleNetwork))
-	http.HandleFunc("/api/discover", logHTTPMiddleware(handleDiscover))
-	http.HandleFunc("/api/upgrade/check", logHTTPMiddleware(handleUpgradeCheck))
-	http.HandleFunc("/api/upgrade", logHTTPMiddleware(handleUpgrade))
-	http.HandleFunc("/api/upgrade/status", logHTTPMiddleware(handleUpgradeStatus))
+	// Setup HTTP routes
+	http.HandleFunc("/", serveIndex)
+	http.HandleFunc("/api/config", handleConfig)
+	http.HandleFunc("/api/stats", handleStats)
+	http.HandleFunc("/api/start", handleStart)
+	http.HandleFunc("/api/stop", handleStop)
+	http.HandleFunc("/api/network", handleNetwork)
+	http.HandleFunc("/api/discover", handleDiscover)
+	http.HandleFunc("/api/upgrade/check", handleUpgradeCheck)
+	http.HandleFunc("/api/upgrade", handleUpgrade)
+	http.HandleFunc("/api/upgrade/status", handleUpgradeStatus)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
-	appLogger.Debug("HTTP routes configured")
 
 	port := "18080"
 	bindAddr := "0.0.0.0:" + port
-	appLogger.Info("Starting web server on http://localhost:%s", port)
+	serviceLogger.Infof("Starting web server on http://localhost:%s", port)
 
 	// Get and display local IP addresses for network access (with retry)
 	displayLocalIPs := func() {
 		localIPs := getLocalIPs()
 		if len(localIPs) > 0 {
-			appLogger.Info("Web interface accessible from network at:")
+			serviceLogger.Info("Web interface accessible from network at:")
 			for _, ip := range localIPs {
-				appLogger.Info("  http://%s:%s", ip, port)
+				serviceLogger.Infof("  http://%s:%s", ip, port)
 			}
 		} else {
-			appLogger.Info("Note: Could not detect local IP addresses for network access")
-			appLogger.Info("The web interface is still accessible at http://localhost:18080")
-			appLogger.Info("To find your IP address, run: ipconfig")
-			appLogger.Info("Or access http://localhost:18080/api/network from the web interface")
+			serviceLogger.Info("Note: Could not detect local IP addresses for network access")
+			serviceLogger.Info("The web interface is still accessible at http://localhost:18080")
+			serviceLogger.Info("To find your IP address, run: ipconfig")
+			serviceLogger.Info("Or access http://localhost:18080/api/network from the web interface")
 		}
 	}
 	
@@ -133,16 +120,15 @@ func (p *program) run() {
 		time.Sleep(3 * time.Second)
 		localIPs := getLocalIPs()
 		if len(localIPs) > 0 {
-			appLogger.Info("Network IP addresses detected (retry):")
+			serviceLogger.Info("Network IP addresses detected (retry):")
 			for _, ip := range localIPs {
-				appLogger.Info("  http://%s:%s", ip, port)
+				serviceLogger.Infof("  http://%s:%s", ip, port)
 			}
 		}
 	}()
 
-	appLogger.Info("Note: This application requires Administrator privileges to intercept packets")
-	appLogger.Info("Note: Windows Firewall may need to allow incoming connections on port %s", port)
-	appLogger.Info("Server ready and listening on %s", bindAddr)
+	serviceLogger.Info("Note: This application requires Administrator privileges to intercept packets")
+	serviceLogger.Infof("Note: Windows Firewall may need to allow incoming connections on port %s", port)
 
 	httpServer = &http.Server{
 		Addr:    bindAddr,
