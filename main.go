@@ -244,11 +244,15 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("[ERROR] Invalid config request: %v", err)
 			http.Error(w, `{"error": "Invalid request"}`, http.StatusBadRequest)
 			return
 		}
 
+		log.Printf("[HTTP] POST /api/config - Setting delay to %d ms", req.DelayMs)
+
 		if req.DelayMs < 0 || req.DelayMs > 10000 {
+			log.Printf("[ERROR] Invalid delay value: %d ms (must be 0-10000)", req.DelayMs)
 			json.NewEncoder(w).Encode(ConfigResponse{
 				Error: "Delay must be between 0 and 10000 milliseconds",
 			})
@@ -262,9 +266,12 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		// Update delay in running packet engine
 		if packetEngine != nil {
 			packetEngine.SetDelay(currentDelay)
+			log.Printf("[INFO] Delay updated in running packet engine")
+		} else {
+			log.Printf("[INFO] Delay will be applied when packet interception starts")
 		}
 
-		log.Printf("Delay updated to %d ms", req.DelayMs)
+		log.Printf("[INFO] Delay updated to %d ms", req.DelayMs)
 
 		runningMutex.RLock()
 		running := isRunning
@@ -276,6 +283,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		})
 
 	default:
+		log.Printf("[ERROR] Method not allowed: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
@@ -299,10 +307,12 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 
 func handleStart(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	log.Printf("[HTTP] POST /api/start - Starting packet interception")
 
 	runningMutex.Lock()
 	if isRunning {
 		runningMutex.Unlock()
+		log.Printf("[ERROR] Packet interception is already running")
 		json.NewEncoder(w).Encode(ConfigResponse{
 			Error: "Packet interception is already running",
 		})
@@ -316,6 +326,8 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	delay := currentDelay
 	delayMutex.RUnlock()
 
+	log.Printf("Attempting to start packet interception with delay: %v", delay)
+
 	// Start packet interception
 	var err error
 	packetEngine, err = NewPacketEngine(delay)
@@ -323,15 +335,17 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		runningMutex.Lock()
 		isRunning = false
 		runningMutex.Unlock()
+		errorMsg := fmt.Sprintf("Failed to start packet interception: %v", err)
+		log.Printf("[ERROR] %s", errorMsg)
 		json.NewEncoder(w).Encode(ConfigResponse{
-			Error: fmt.Sprintf("Failed to start packet interception: %v", err),
+			Error: errorMsg,
 		})
 		return
 	}
 
 	go packetEngine.Start()
 
-	log.Println("Packet interception started")
+	log.Println("[INFO] Packet interception started successfully")
 	json.NewEncoder(w).Encode(ConfigResponse{
 		IsRunning: true,
 	})
@@ -339,10 +353,12 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 
 func handleStop(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	log.Printf("[HTTP] POST /api/stop - Stopping packet interception")
 
 	runningMutex.Lock()
 	if !isRunning {
 		runningMutex.Unlock()
+		log.Printf("[ERROR] Packet interception is not running")
 		json.NewEncoder(w).Encode(ConfigResponse{
 			Error: "Packet interception is not running",
 		})
@@ -353,11 +369,13 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 
 	// Stop packet interception
 	if packetEngine != nil {
+		log.Println("Stopping packet engine...")
 		packetEngine.Stop()
 		packetEngine = nil
+		log.Println("[INFO] Packet engine stopped")
 	}
 
-	log.Println("Packet interception stopped")
+	log.Println("[INFO] Packet interception stopped successfully")
 	json.NewEncoder(w).Encode(ConfigResponse{
 		IsRunning: false,
 	})
