@@ -21,7 +21,7 @@ if not "%~1"=="" (
     )
     echo Extracted directory: [!EXE_DIR!]
     echo.
-    goto :skip_path_extraction
+    set PATH_PROVIDED=1
 )
 
 :: Check if running as Administrator
@@ -72,12 +72,23 @@ for /f "tokens=3" %%a in ('sc query %SERVICE_NAME% ^| findstr "STATE"') do (
 )
 echo.
 
-:skip_path_extraction
-
 :: 4. Check if executable exists
 echo [4] Executable Check:
 echo ----------------------------------------
-if not defined EXE_PATH (
+if defined PATH_PROVIDED (
+    echo Executable path was provided as argument
+    echo Service executable path: !EXE_PATH!
+    if exist "!EXE_PATH!" (
+        echo Executable exists: YES
+        for %%b in ("!EXE_PATH!") do (
+            echo File size: %%~zb bytes
+            echo Modified: %%~tb
+        )
+    ) else (
+        echo Executable exists: NO - ERROR!
+        echo Checking path: !EXE_PATH!
+    )
+) else (
     set EXE_PATH=
     set EXE_DIR=
     echo Debug: Querying service configuration...
@@ -137,6 +148,7 @@ if %errorLevel% neq 0 (
         echo Usage: service_status.bat [executable_path]
         echo Example: service_status.bat "C:\Program Files\WindowsNetworkManager\WindowsNetworkManager.exe"
     )
+)
 )
 echo.
 
