@@ -44,6 +44,9 @@ async function updateDelay() {
             showError(result.error);
         } else {
             showError(''); // Clear error
+            // Update status and button states based on response
+            updateStatus(result.is_running);
+            updateButtonStates(result.is_running);
             console.log('Delay updated to', delayMs, 'ms');
         }
     } catch (error) {
