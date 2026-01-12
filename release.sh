@@ -114,32 +114,30 @@ echo ""
 
 # Copy batch files
 echo "Copying batch files..."
-if [ -f "install_service.bat" ]; then
-    cp install_service.bat "$DIST_DIR/"
-    echo "✓ Copied install_service.bat"
-fi
-if [ -f "uninstall_service.bat" ]; then
-    cp uninstall_service.bat "$DIST_DIR/"
-    echo "✓ Copied uninstall_service.bat"
-fi
-if [ -f "start_service.bat" ]; then
-    cp start_service.bat "$DIST_DIR/"
-    echo "✓ Copied start_service.bat"
-fi
-if [ -f "stop_service.bat" ]; then
-    cp stop_service.bat "$DIST_DIR/"
-    echo "✓ Copied stop_service.bat"
-fi
-if [ -f "configure_firewall.bat" ]; then
-    cp configure_firewall.bat "$DIST_DIR/"
-    echo "✓ Copied configure_firewall.bat"
-fi
+BATCH_FILES=(
+    "install_service.bat"
+    "uninstall_service.bat"
+    "configure_firewall.bat"
+    "start_service.bat"
+    "stop_service.bat"
+    "service_status.bat"
+    "view_logs.bat"
+    "check_architecture.bat"
+    "check_admin_privileges.bat"
+)
+
+for bat_file in "${BATCH_FILES[@]}"; do
+    if [ -f "$bat_file" ]; then
+        cp "$bat_file" "$DIST_DIR/"
+        echo "✓ Copied $bat_file"
+    fi
+done
 echo ""
 
 # Create ZIP bundle
 echo "Creating release bundle..."
 cd "$DIST_DIR"
-zip -r "../$ZIP_NAME" WindowsNetworkManager.exe WinDivert.dll web/ install_service.bat uninstall_service.bat start_service.bat stop_service.bat configure_firewall.bat > /dev/null
+zip -r "../$ZIP_NAME" . > /dev/null
 cd ..
 echo "✓ Created $ZIP_NAME"
 echo ""
@@ -239,6 +237,10 @@ RELEASE_NOTES="## Windows Network Manager $VERSION
             - \`start_service.bat\` - Start Windows service (run as Administrator)
             - \`stop_service.bat\` - Stop Windows service (run as Administrator)
             - \`configure_firewall.bat\` - Configure Windows Firewall (run as Administrator)
+            - \`service_status.bat\` - Check service status and diagnostics
+            - \`view_logs.bat\` - View Windows Event Logs for the service
+            - \`check_architecture.bat\` - Check Windows machine architecture (x64/ARM64)
+            - \`check_admin_privileges.bat\` - Check administrator privileges
 
 ### Quick Install
 See [GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/) for quick installation instructions."

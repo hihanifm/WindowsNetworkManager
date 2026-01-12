@@ -61,24 +61,30 @@ echo ""
 
 # Copy batch files
 echo "Copying batch files..."
-if [ -f "install_service.bat" ]; then
-    cp install_service.bat "$RELEASE_DIR/"
-    echo "✓ Copied install_service.bat"
-fi
-if [ -f "uninstall_service.bat" ]; then
-    cp uninstall_service.bat "$RELEASE_DIR/"
-    echo "✓ Copied uninstall_service.bat"
-fi
-if [ -f "configure_firewall.bat" ]; then
-    cp configure_firewall.bat "$RELEASE_DIR/"
-    echo "✓ Copied configure_firewall.bat"
-fi
+BATCH_FILES=(
+    "install_service.bat"
+    "uninstall_service.bat"
+    "configure_firewall.bat"
+    "start_service.bat"
+    "stop_service.bat"
+    "service_status.bat"
+    "view_logs.bat"
+    "check_architecture.bat"
+    "check_admin_privileges.bat"
+)
+
+for bat_file in "${BATCH_FILES[@]}"; do
+    if [ -f "$bat_file" ]; then
+        cp "$bat_file" "$RELEASE_DIR/"
+        echo "✓ Copied $bat_file"
+    fi
+done
 echo ""
 
 # Create ZIP bundle
 echo "Creating release bundle..."
 cd "$RELEASE_DIR"
-zip -r "../$ZIP_NAME" WindowsNetworkManager.exe WinDivert.dll web/ install_service.bat uninstall_service.bat configure_firewall.bat > /dev/null
+zip -r "../$ZIP_NAME" . > /dev/null
 cd ..
 echo "✓ Created $ZIP_NAME"
 echo ""
