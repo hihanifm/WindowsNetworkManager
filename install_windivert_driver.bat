@@ -26,21 +26,23 @@ if exist "%EXE_DIR%WinDivert64.sys" (
     set "DRIVER_FILE=%EXE_DIR%WinDivert64.sys"
     set "DRIVER_NAME=WinDivert64"
     echo [OK] Found WinDivert64.sys in executable directory
-) else if exist "%EXE_DIR%WinDivert32.sys" (
-    set "DRIVER_FILE=%EXE_DIR%WinDivert32.sys"
-    set "DRIVER_NAME=WinDivert32"
-    echo [OK] Found WinDivert32.sys in executable directory
 ) else (
-    echo [ERROR] WinDivert driver file (.sys) not found!
-    echo.
-    echo Please ensure WinDivert64.sys (or WinDivert32.sys) is in the same
-    echo directory as WindowsNetworkManager.exe
-    echo.
-    echo Download from: https://www.reqrypt.org/windivert.html
-    echo Extract and copy the .sys file to: %EXE_DIR%
-    echo.
-    pause
-    exit /b 1
+    if exist "%EXE_DIR%WinDivert32.sys" (
+        set "DRIVER_FILE=%EXE_DIR%WinDivert32.sys"
+        set "DRIVER_NAME=WinDivert32"
+        echo [OK] Found WinDivert32.sys in executable directory
+    ) else (
+        echo [ERROR] WinDivert driver file (.sys) not found!
+        echo.
+        echo Please ensure WinDivert64.sys (or WinDivert32.sys) is in the same
+        echo directory as WindowsNetworkManager.exe
+        echo.
+        echo Download from: https://www.reqrypt.org/windivert.html
+        echo Extract and copy the .sys file to: %EXE_DIR%
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
 echo.
