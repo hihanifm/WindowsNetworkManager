@@ -88,6 +88,7 @@ if defined PATH_PROVIDED (
         echo Executable exists: NO - ERROR!
         echo Checking path: !EXE_PATH!
     )
+    echo Extracted directory: [!EXE_DIR!]
 ) else (
     set EXE_PATH=
     set EXE_DIR=
