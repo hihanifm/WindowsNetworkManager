@@ -1,37 +1,54 @@
 @echo off
+setlocal enabledelayedexpansion
 echo ========================================
 echo WinDivert Driver Installation Script
 echo ========================================
 echo.
 
 REM Check for administrator privileges
+echo [DEBUG] Checking administrator privileges...
 net session >nul 2>&1
-if %errorLevel% neq 0 (
+set ADMIN_CHECK=%ERRORLEVEL%
+echo [DEBUG] Admin check result: %ADMIN_CHECK%
+if %ADMIN_CHECK% neq 0 (
     echo ERROR: This script must be run as Administrator!
     echo Right-click and select "Run as Administrator"
     pause
     exit /b 1
 )
+echo [DEBUG] Administrator privileges confirmed
+echo.
 
 REM Get the directory where this script is located
 set "SCRIPT_DIR=%~dp0"
 set "EXE_DIR=%SCRIPT_DIR%"
+echo [DEBUG] Script directory: %SCRIPT_DIR%
+echo [DEBUG] Executable directory: %EXE_DIR%
+echo.
 
 echo Checking for WinDivert driver files...
 echo.
 
 REM Check architecture
 set "DRIVER_FILE="
+set "DRIVER_NAME="
+set "DRIVER_FOUND=0"
+
+echo [DEBUG] Checking for WinDivert64.sys...
 if exist "%EXE_DIR%WinDivert64.sys" (
     set "DRIVER_FILE=%EXE_DIR%WinDivert64.sys"
     set "DRIVER_NAME=WinDivert64"
+    set "DRIVER_FOUND=1"
     echo [OK] Found WinDivert64.sys in executable directory
 ) else (
+    echo [DEBUG] WinDivert64.sys not found, checking for WinDivert32.sys...
     if exist "%EXE_DIR%WinDivert32.sys" (
         set "DRIVER_FILE=%EXE_DIR%WinDivert32.sys"
         set "DRIVER_NAME=WinDivert32"
+        set "DRIVER_FOUND=1"
         echo [OK] Found WinDivert32.sys in executable directory
     ) else (
+        set "DRIVER_FOUND=0"
         echo [ERROR] WinDivert driver file (.sys) not found!
         echo.
         echo Please ensure WinDivert64.sys (or WinDivert32.sys) is in the same
@@ -45,20 +62,31 @@ if exist "%EXE_DIR%WinDivert64.sys" (
     )
 )
 
+if %DRIVER_FOUND% equ 0 (
+    echo [ERROR] Driver file not found. Exiting.
+    pause
+    exit /b 1
+)
+
 echo.
-echo Driver file: %DRIVER_FILE%
+echo [DEBUG] Driver file: %DRIVER_FILE%
+echo [DEBUG] Driver name: %DRIVER_NAME%
 echo.
 
 REM Check if driver is already installed
+echo [DEBUG] Checking if WinDivert driver service exists...
 sc query WinDivert >nul 2>&1
-if %errorLevel% equ 0 (
+set SERVICE_CHECK=%ERRORLEVEL%
+echo [DEBUG] Service check result: %SERVICE_CHECK%
+
+if %SERVICE_CHECK% equ 0 (
     echo [INFO] WinDivert driver service already exists
     echo.
     echo Checking driver status...
     sc query WinDivert
     echo.
     echo The driver should auto-load when WindowsNetworkManager.exe starts.
-    echo If you're experiencing issues, try:
+    echo If you are experiencing issues, try:
     echo   1. Restart WindowsNetworkManager.exe as Administrator
     echo   2. Check Event Viewer for driver errors
     echo   3. Verify the driver file is not blocked by Windows
@@ -81,18 +109,25 @@ echo.
 echo Do you want to manually install the driver now? (Y/N)
 set /p INSTALL_CHOICE=
 
+echo [DEBUG] User choice: %INSTALL_CHOICE%
+
 if /i "%INSTALL_CHOICE%"=="Y" (
     echo.
     echo Installing WinDivert driver...
+    echo [DEBUG] Creating driver service with path: %DRIVER_FILE%
     sc create WinDivert type= kernel binPath= "%DRIVER_FILE%"
+    set CREATE_RESULT=%ERRORLEVEL%
+    echo [DEBUG] Create service result: %CREATE_RESULT%
     
-    if %ERRORLEVEL% EQU 0 (
+    if %CREATE_RESULT% EQU 0 (
         echo [OK] Driver service created successfully
         echo.
         echo Starting driver...
         sc start WinDivert
+        set START_RESULT=%ERRORLEVEL%
+        echo [DEBUG] Start service result: %START_RESULT%
         
-        if %ERRORLEVEL% EQU 0 (
+        if %START_RESULT% EQU 0 (
             echo [OK] Driver started successfully
             echo.
             echo ========================================
@@ -108,12 +143,12 @@ if /i "%INSTALL_CHOICE%"=="Y" (
         )
     ) else (
         echo [ERROR] Failed to create driver service
-        echo Error code: %ERRORLEVEL%
+        echo Error code: %CREATE_RESULT%
         echo.
         echo Common causes:
         echo   - Driver file path is incorrect
         echo   - Driver file is blocked or unsigned
-        echo   - Insufficient privileges (though you're running as Admin)
+        echo   - Insufficient privileges (though you are running as Admin)
         echo.
         echo Try running WindowsNetworkManager.exe as Administrator instead.
         echo The driver should auto-install when the application starts.
@@ -141,7 +176,7 @@ echo If you still get "invalid handle" errors:
 echo   - Check Event Viewer for driver errors
 echo   - Verify driver file is not blocked (right-click - Properties - Unblock)
 echo   - Try restarting Windows
-echo   - Check Windows Defender / Antivirus isn't blocking the driver
+echo   - Check Windows Defender / Antivirus is not blocking the driver
 echo.
 
 pause
