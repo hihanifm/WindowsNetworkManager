@@ -248,21 +248,19 @@ for /f "tokens=2 delims==" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "SERV
     if "!ACCT!"=="LocalSystem" (
         echo Privilege Level: Administrator (LocalSystem has full admin rights)
         set IS_ADMIN=1
-        goto :account_done
     )
     if "!ACCT!"=="NT AUTHORITY\SYSTEM" (
         echo Privilege Level: Administrator (SYSTEM account has full admin rights)
         set IS_ADMIN=1
-        goto :account_done
     )
     if "!ACCT!"=="" (
         echo Privilege Level: Unknown
         set IS_ADMIN=0
-        goto :account_done
     )
-    echo Privilege Level: Checking if account has admin rights...
-    set IS_ADMIN=0
-    :account_done
+    if not "!ACCT!"=="LocalSystem" if not "!ACCT!"=="NT AUTHORITY\SYSTEM" if not "!ACCT!"=="" (
+        echo Privilege Level: Checking if account has admin rights...
+        set IS_ADMIN=0
+    )
 )
 if !ACCOUNT_FOUND! equ 0 (
     echo Service account information not available
