@@ -235,18 +235,16 @@ See [GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/) for quick 
 
 # Check if release exists
 if gh release view "$TAG_NAME" &> /dev/null; then
-    echo "Release $TAG_NAME already exists. Uploading assets..."
-    gh release upload "$TAG_NAME" "$ZIP_NAME" "$DIST_DIR/WindowsNetworkManager.exe" "$DIST_DIR/WinDivert.dll" --clobber
-    echo "✓ Assets uploaded to existing release"
+    echo "Release $TAG_NAME already exists. Uploading ZIP file..."
+    gh release upload "$TAG_NAME" "$ZIP_NAME" --clobber
+    echo "✓ ZIP file uploaded to existing release"
 else
     echo "Creating new release $TAG_NAME..."
     gh release create "$TAG_NAME" \
         "$ZIP_NAME" \
-        "$DIST_DIR/WindowsNetworkManager.exe" \
-        "$DIST_DIR/WinDivert.dll" \
         --title "Release $TAG_NAME" \
         --notes "$RELEASE_NOTES"
-    echo "✓ Release created and assets uploaded"
+    echo "✓ Release created and ZIP file uploaded"
 fi
 
 echo ""
