@@ -76,7 +76,7 @@ func initUpgradeManager() error {
 
 	upgradeStatus = &UpgradeStatus{
 		Status:         "idle",
-		CurrentVersion: CurrentVersion,
+		CurrentVersion: version.Version, // Always use current version from package
 	}
 
 	return nil
@@ -145,10 +145,13 @@ func CheckForUpdates(updateURL string) (*UpgradeStatus, error) {
 		}
 	}
 
-	updateAvailable := compareVersions(CurrentVersion, latestVersion) < 0
+	// Always use current version from version package
+	currentVer := version.Version
+	updateAvailable := compareVersions(currentVer, latestVersion) < 0
 
 	upgradeMutex.Lock()
 	upgradeStatus.Status = "idle"
+	upgradeStatus.CurrentVersion = currentVer
 	upgradeStatus.LatestVersion = latestVersion
 	upgradeStatus.UpdateAvailable = updateAvailable
 	upgradeStatus.DownloadURL = downloadURL
@@ -512,5 +515,9 @@ func startService() error {
 func GetUpgradeStatus() *UpgradeStatus {
 	upgradeMutex.RLock()
 	defer upgradeMutex.RUnlock()
-	return upgradeStatus
+
+	// Always return current version from version package (not cached)
+	status := *upgradeStatus
+	status.CurrentVersion = version.Version
+	return &status
 }
