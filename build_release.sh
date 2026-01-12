@@ -74,6 +74,7 @@ BATCH_FILES=(
     "run_manual.bat"
     "run_manual_port.bat"
     "install_windivert_driver.bat"
+    "reinstall_windivert_driver.bat"
 )
 
 for bat_file in "${BATCH_FILES[@]}"; do

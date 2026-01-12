@@ -123,9 +123,9 @@ if !SERVICE_CHECK! equ 0 (
                 echo [OK] Driver file exists: !DRIVER_FILE!
                 echo.
                 echo The service might be configured with a different path.
-                echo You may need to delete and recreate the service:
-                echo   sc delete WinDivert
-                echo   Then run this script again to reinstall
+                echo.
+                echo To fix this, run: reinstall_windivert_driver.bat
+                echo This will delete and recreate the service with the correct path.
             ) else (
                 echo [ERROR] Driver file is missing: !DRIVER_FILE!
                 echo Please ensure the driver file is in the executable directory.
