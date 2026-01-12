@@ -9,6 +9,21 @@ echo.
 set SERVICE_NAME=WindowsNetworkManager
 set EXE_NAME=WindowsNetworkManager.exe
 
+:: Check if executable path was provided as argument
+if not "%~1"=="" (
+    set "EXE_PATH=%~1"
+    echo Using provided executable path: !EXE_PATH!
+    :: Extract directory from provided path
+    for %%f in ("!EXE_PATH!") do (
+        set "EXE_DIR=%%~dpf"
+        :: Remove trailing backslash
+        if "!EXE_DIR:~-1!"=="\" set "EXE_DIR=!EXE_DIR:~0,-1!"
+    )
+    echo Extracted directory: [!EXE_DIR!]
+    echo.
+    goto :skip_path_extraction
+)
+
 :: Check if running as Administrator
 net session >nul 2>&1
 if %errorLevel% neq 0 (
