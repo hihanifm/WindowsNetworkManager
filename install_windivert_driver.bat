@@ -89,11 +89,60 @@ if !SERVICE_CHECK! equ 0 (
     echo Checking driver status...
     sc query WinDivert
     echo.
+    
+    REM Check if service is stopped
+    sc query WinDivert | findstr /C:"STOPPED" >nul 2>&1
+    if !ERRORLEVEL! equ 0 (
+        echo.
+        echo [WARNING] Driver service exists but is STOPPED
+        echo.
+        echo Checking service configuration...
+        sc qc WinDivert
+        echo.
+        echo Attempting to start the driver service...
+        sc start WinDivert
+        set START_ATTEMPT=%ERRORLEVEL%
+        
+        if !START_ATTEMPT! equ 0 (
+            echo [OK] Driver service started successfully
+            echo.
+            echo Checking status again...
+            sc query WinDivert
+            echo.
+        ) else (
+            echo [ERROR] Failed to start driver service. Error code: !START_ATTEMPT!
+            echo.
+            echo Common causes:
+            echo   - Driver file path in service config is incorrect
+            echo   - Driver file is missing from the configured path
+            echo   - Driver file is blocked or unsigned
+            echo   - Driver signature verification failed
+            echo.
+            echo Checking if driver file exists in executable directory...
+            if exist "!DRIVER_FILE!" (
+                echo [OK] Driver file exists: !DRIVER_FILE!
+                echo.
+                echo The service might be configured with a different path.
+                echo You may need to delete and recreate the service:
+                echo   sc delete WinDivert
+                echo   Then run this script again to reinstall
+            ) else (
+                echo [ERROR] Driver file is missing: !DRIVER_FILE!
+                echo Please ensure the driver file is in the executable directory.
+            )
+            echo.
+        )
+    ) else (
+        echo [OK] Driver service is running
+        echo.
+    )
+    
     echo The driver should auto-load when WindowsNetworkManager.exe starts.
     echo If you are experiencing issues, try:
     echo   1. Restart WindowsNetworkManager.exe as Administrator
     echo   2. Check Event Viewer for driver errors
     echo   3. Verify the driver file is unblocked by Windows
+    echo   4. Check that the driver file path matches the service configuration
     echo.
     pause
     exit /b 0
