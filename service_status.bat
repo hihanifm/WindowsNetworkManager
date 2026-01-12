@@ -72,12 +72,15 @@ for /f "tokens=3" %%a in ('sc query %SERVICE_NAME% ^| findstr "STATE"') do (
 )
 echo.
 
+:skip_path_extraction
+
 :: 4. Check if executable exists
 echo [4] Executable Check:
 echo ----------------------------------------
-set EXE_PATH=
-set EXE_DIR=
-echo Debug: Querying service configuration...
+if not defined EXE_PATH (
+    set EXE_PATH=
+    set EXE_DIR=
+    echo Debug: Querying service configuration...
 sc qc %SERVICE_NAME% 2>nul | findstr "BINARY_PATH_NAME" >nul
 if %errorLevel% neq 0 (
     echo ERROR: Could not find BINARY_PATH_NAME in service configuration
