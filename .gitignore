@@ -31,4 +31,5 @@ windivert.h
 
 # Release artifacts (ZIP files are created by GitHub Actions and uploaded to Releases)
 release/
+dist/
 WindowsNetworkManager-v*.zip
