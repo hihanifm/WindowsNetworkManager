@@ -1,3 +1,16 @@
+2026/01/12 12:43:11 Initializing packet engine with delay: 0s
+2026/01/12 12:43:11 DLL not loaded, initializing...
+2026/01/12 12:43:11 WinDivert DLL loaded successfully from: C:\Users\hihan\Downloads\wnm\WindowsNetworkManager-v2.10.0\WinDivert.dll (architecture: amd64)
+2026/01/12 12:43:11 Creating WinDivert handle with filter: outbound
+2026/01/12 12:43:11 Note: This requires Administrator privileges
+2026/01/12 12:43:11 WinDivert handle created successfully
+2026/01/12 12:43:11 [INFO] Packet interception started successfully
+2026/01/12 12:43:11 Starting packet interception engine...
+2026/01/12 12:43:11 Error receiving packet: WinDivertRecv failed: The handle is invalid.
+2026/01/12 12:43:11 Error receiving packet: WinDivertRecv failed: The handle is invalid.
+2026/01/12 12:43:11 Error receiving packet: WinDivertRecv failed: The handle is invalid.\
+
+
 PS C:\Windows\system32> Get-EventLog -LogName Application -Source "WindowsNetworkManager" -Newest 20
 
    Index Time          EntryType   Source                 InstanceID Message
