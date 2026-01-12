@@ -865,4 +865,4 @@ eventvwr.msc  # Event Viewer
 
 ---
 
-*Last updated: Version 2.5.0*
+*Last updated: Version 2.6.0*
