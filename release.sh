@@ -124,6 +124,8 @@ BATCH_FILES=(
     "view_logs.bat"
     "check_architecture.bat"
     "check_admin_privileges.bat"
+    "run_manual.bat"
+    "run_manual_port.bat"
 )
 
 for bat_file in "${BATCH_FILES[@]}"; do
@@ -241,6 +243,8 @@ RELEASE_NOTES="## Windows Network Manager $VERSION
             - \`view_logs.bat\` - View Windows Event Logs for the service
             - \`check_architecture.bat\` - Check Windows machine architecture (x64/ARM64)
             - \`check_admin_privileges.bat\` - Check administrator privileges
+            - \`run_manual.bat\` - Run application manually in console mode (default port 18080)
+            - \`run_manual_port.bat\` - Run application manually with custom port
 
 ### Quick Install
 See [GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/) for quick installation instructions."

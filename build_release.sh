@@ -71,6 +71,8 @@ BATCH_FILES=(
     "view_logs.bat"
     "check_architecture.bat"
     "check_admin_privileges.bat"
+    "run_manual.bat"
+    "run_manual_port.bat"
 )
 
 for bat_file in "${BATCH_FILES[@]}"; do
