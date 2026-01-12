@@ -239,28 +239,32 @@ echo [12] Service Account:
 echo ----------------------------------------
 set SERVICE_ACCOUNT=
 set IS_ADMIN=0
+set ACCOUNT_FOUND=0
 for /f "tokens=2 delims==" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "SERVICE_START_NAME"') do (
-    set SERVICE_ACCOUNT=%%a
+    set "SERVICE_ACCOUNT=%%a"
+    set ACCOUNT_FOUND=1
     echo Service runs as: %%a
-    if "%%a"=="LocalSystem" (
+    set "ACCT=%%a"
+    if "!ACCT!"=="LocalSystem" (
         echo Privilege Level: Administrator (LocalSystem has full admin rights)
         set IS_ADMIN=1
-    ) else (
-        if "%%a"=="NT AUTHORITY\SYSTEM" (
-            echo Privilege Level: Administrator (SYSTEM account has full admin rights)
-            set IS_ADMIN=1
-        ) else (
-            if "%%a"=="" (
-                echo Privilege Level: Unknown
-                set IS_ADMIN=0
-            ) else (
-                echo Privilege Level: Checking if account has admin rights...
-                set IS_ADMIN=0
-            )
-        )
+        goto :account_done
     )
+    if "!ACCT!"=="NT AUTHORITY\SYSTEM" (
+        echo Privilege Level: Administrator (SYSTEM account has full admin rights)
+        set IS_ADMIN=1
+        goto :account_done
+    )
+    if "!ACCT!"=="" (
+        echo Privilege Level: Unknown
+        set IS_ADMIN=0
+        goto :account_done
+    )
+    echo Privilege Level: Checking if account has admin rights...
+    set IS_ADMIN=0
+    :account_done
 )
-if not defined SERVICE_ACCOUNT (
+if !ACCOUNT_FOUND! equ 0 (
     echo Service account information not available
     echo Service may not be installed
 )
