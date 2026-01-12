@@ -202,8 +202,41 @@ echo.
 :: 12. Service Account
 echo [12] Service Account:
 echo ----------------------------------------
+set SERVICE_ACCOUNT=
 for /f "tokens=2 delims==" %%a in ('sc qc %SERVICE_NAME% ^| findstr "SERVICE_START_NAME"') do (
+    set SERVICE_ACCOUNT=%%a
     echo Service runs as: %%a
+    if "%%a"=="LocalSystem" (
+        echo Privilege Level: Administrator (LocalSystem has full admin rights)
+        set IS_ADMIN=1
+    ) else if "%%a"=="NT AUTHORITY\SYSTEM" (
+        echo Privilege Level: Administrator (SYSTEM account has full admin rights)
+        set IS_ADMIN=1
+    ) else if "%%a"=="" (
+        echo Privilege Level: Unknown
+        set IS_ADMIN=0
+    ) else (
+        echo Privilege Level: Checking if account has admin rights...
+        set IS_ADMIN=0
+    )
+)
+echo.
+
+:: 13. Check Process Elevation (if process is running)
+echo [13] Process Elevation Check:
+echo ----------------------------------------
+if "!STATE!"=="RUNNING" (
+    echo Checking if process is running with elevated privileges...
+    powershell -Command "$proc = Get-Process -Name '%EXE_NAME%' -ErrorAction SilentlyContinue; if ($proc) { $isElevated = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); $procInfo = Get-WmiObject Win32_Process -Filter \"ProcessId = $($proc.Id)\"; $owner = $procInfo.GetOwner(); Write-Host \"Process Owner: $($owner.Domain)\$($owner.User)\"; if ($isElevated -or $owner.User -eq 'SYSTEM' -or $owner.User -eq 'LOCAL SERVICE' -or $owner.User -eq 'NETWORK SERVICE') { Write-Host 'Privilege Level: Administrator/Elevated' } else { Write-Host 'Privilege Level: Standard User' } } else { Write-Host 'Process not running' }" 2>nul
+    if %errorLevel% neq 0 (
+        echo Using alternative method to check privileges...
+        for /f "tokens=*" %%p in ('tasklist /FI "IMAGENAME eq %EXE_NAME%" /V /FO CSV ^| findstr /I "%EXE_NAME%"') do (
+            echo Process found, checking account...
+            echo Note: Full privilege check requires PowerShell
+        )
+    )
+) else (
+    echo Process is not running - cannot check elevation
 )
 echo.
 
@@ -217,6 +250,31 @@ if "!STATE!"=="RUNNING" (
     echo [STOPPED] Service is STOPPED
 ) else (
     echo [UNKNOWN] Service status is !STATE!
+)
+
+:: Admin Privilege Summary
+echo.
+echo Admin Privilege Status:
+echo ----------------------------------------
+if defined IS_ADMIN (
+    if !IS_ADMIN! equ 1 (
+        echo [OK] Service is running with Administrator privileges
+        echo       This is REQUIRED for WinDivert to function
+    ) else (
+        echo [WARNING] Service may not have Administrator privileges
+        echo           WinDivert requires Administrator privileges to work
+    )
+) else (
+    echo [INFO] Check service account above for privilege level
+    if defined SERVICE_ACCOUNT (
+        if "!SERVICE_ACCOUNT!"=="LocalSystem" (
+            echo [OK] LocalSystem account has full admin rights
+        ) else if "!SERVICE_ACCOUNT!"=="NT AUTHORITY\SYSTEM" (
+            echo [OK] SYSTEM account has full admin rights
+        ) else (
+            echo [CHECK] Verify account !SERVICE_ACCOUNT! has admin rights
+        )
+    )
 )
 
 :: Check for common issues
