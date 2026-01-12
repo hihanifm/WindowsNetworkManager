@@ -99,9 +99,11 @@ The service looks for `web/index.html` relative to the executable directory.
    - Check that `web/static/app.js` exists
 
 3. **If files are missing:**
-   - Re-download the release package
+   - **Note:** Older releases (before v2.4.0) may not include the `web/` folder in the ZIP
+   - Download the latest release which includes `web/index.html` and `web/static/app.js`
+   - Or manually add the `web/` folder from the source code repository
    - Extract all files to the same directory
-   - Ensure `web/` folder is present
+   - Ensure `web/` folder is present with `index.html` and `static/app.js`
 
 **If running manually:**
 1. Run from the directory containing the `web/` folder:

@@ -65,7 +65,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ZIP_NAME="WindowsNetworkManager-v${VERSION}.zip"
-          zip -r "${ZIP_NAME}" WindowsNetworkManager.exe WinDivert.dll
+          zip -r "${ZIP_NAME}" WindowsNetworkManager.exe WinDivert.dll web/
           ls -lh "${ZIP_NAME}"
 
       - name: Upload build artifacts (manual dispatch only)
@@ -95,6 +95,7 @@ jobs:
             ### Files Included
             - `WindowsNetworkManager.exe` - Main application
             - `WinDivert.dll` - Required library (WinDivert 2.2.0)
+            - `web/` - Web interface files (index.html, static/app.js)
             
             ### Quick Install
             See [GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/) for quick installation instructions.

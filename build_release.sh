@@ -47,10 +47,22 @@ else
 fi
 echo ""
 
+# Copy web directory
+echo "Copying web interface files..."
+if [ -d "web" ]; then
+    cp -r web "$RELEASE_DIR/web"
+    echo "✓ Copied web directory (index.html, static/app.js)"
+else
+    echo "ERROR: web directory not found"
+    echo "Please ensure web/ directory exists with index.html and static/app.js"
+    exit 1
+fi
+echo ""
+
 # Create ZIP bundle
 echo "Creating release bundle..."
 cd "$RELEASE_DIR"
-zip -r "../$ZIP_NAME" WindowsNetworkManager.exe WinDivert.dll > /dev/null
+zip -r "../$ZIP_NAME" WindowsNetworkManager.exe WinDivert.dll web/ > /dev/null
 cd ..
 echo "✓ Created $ZIP_NAME"
 echo ""
@@ -70,6 +82,7 @@ echo ""
 echo "Files created:"
 echo "  - $RELEASE_DIR/WindowsNetworkManager.exe"
 echo "  - $RELEASE_DIR/WinDivert.dll"
+echo "  - $RELEASE_DIR/web/ (index.html, static/app.js)"
 echo "  - $ZIP_NAME"
 echo ""
 echo "To create a GitHub release:"
