@@ -122,6 +122,14 @@ if [ -f "uninstall_service.bat" ]; then
     cp uninstall_service.bat "$DIST_DIR/"
     echo "✓ Copied uninstall_service.bat"
 fi
+if [ -f "start_service.bat" ]; then
+    cp start_service.bat "$DIST_DIR/"
+    echo "✓ Copied start_service.bat"
+fi
+if [ -f "stop_service.bat" ]; then
+    cp stop_service.bat "$DIST_DIR/"
+    echo "✓ Copied stop_service.bat"
+fi
 if [ -f "configure_firewall.bat" ]; then
     cp configure_firewall.bat "$DIST_DIR/"
     echo "✓ Copied configure_firewall.bat"
@@ -131,7 +139,7 @@ echo ""
 # Create ZIP bundle
 echo "Creating release bundle..."
 cd "$DIST_DIR"
-zip -r "../$ZIP_NAME" WindowsNetworkManager.exe WinDivert.dll web/ install_service.bat uninstall_service.bat configure_firewall.bat > /dev/null
+zip -r "../$ZIP_NAME" WindowsNetworkManager.exe WinDivert.dll web/ install_service.bat uninstall_service.bat start_service.bat stop_service.bat configure_firewall.bat > /dev/null
 cd ..
 echo "✓ Created $ZIP_NAME"
 echo ""
@@ -215,20 +223,22 @@ fi
 echo "Creating/updating GitHub Release..."
 RELEASE_NOTES="## Windows Network Manager $VERSION
 
-### Installation
-1. Download \`WindowsNetworkManager-v${VERSION}.zip\`
-2. Extract the ZIP file
-3. Right-click \`install_service.bat\` → Run as Administrator
-4. The service will install and start automatically
-5. Access web interface at http://localhost:18080
+            ### Installation
+            1. Download \`WindowsNetworkManager-v${VERSION}.zip\`
+            2. Extract the ZIP file
+            3. Right-click \`install_service.bat\` → Run as Administrator
+            4. Right-click \`start_service.bat\` → Run as Administrator (to start the service)
+            5. Access web interface at http://localhost:18080
 
 ### Files Included
 - \`WindowsNetworkManager.exe\` - Main application
 - \`WinDivert.dll\` - Required library (WinDivert 2.2.0)
 - \`web/\` - Web interface files (index.html, static/app.js)
-- \`install_service.bat\` - Install and start as Windows service (run as Administrator)
-- \`uninstall_service.bat\` - Uninstall Windows service (run as Administrator)
-- \`configure_firewall.bat\` - Configure Windows Firewall (run as Administrator)
+            - \`install_service.bat\` - Install Windows service (run as Administrator)
+            - \`uninstall_service.bat\` - Uninstall Windows service (run as Administrator)
+            - \`start_service.bat\` - Start Windows service (run as Administrator)
+            - \`stop_service.bat\` - Stop Windows service (run as Administrator)
+            - \`configure_firewall.bat\` - Configure Windows Firewall (run as Administrator)
 
 ### Quick Install
 See [GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/) for quick installation instructions."
