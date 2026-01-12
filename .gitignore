@@ -29,6 +29,6 @@ WinDivert*.sys
 windivert.h
 !vendor/windivert/WinDivert.dll
 
-# Release artifacts (optional - uncomment to commit release zips)
-# release/
-# WindowsNetworkManager-v*.zip
+# Release artifacts (ZIP files are created by GitHub Actions and uploaded to Releases)
+release/
+WindowsNetworkManager-v*.zip
