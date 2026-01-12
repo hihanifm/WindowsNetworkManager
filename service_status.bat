@@ -47,10 +47,12 @@ for /f "tokens=3" %%a in ('sc query %SERVICE_NAME% ^| findstr "STATE"') do (
     echo State: %%a
     if "%%a"=="RUNNING" (
         echo Status: Service is currently RUNNING
-    ) else if "%%a"=="STOPPED" (
-        echo Status: Service is currently STOPPED
     ) else (
-        echo Status: Service state is %%a
+        if "%%a"=="STOPPED" (
+            echo Status: Service is currently STOPPED
+        ) else (
+            echo Status: Service state is %%a
+        )
     )
 )
 echo.
@@ -288,10 +290,12 @@ echo Summary:
 echo ========================================
 if "!STATE!"=="RUNNING" (
     echo [OK] Service is RUNNING
-) else if "!STATE!"=="STOPPED" (
-    echo [STOPPED] Service is STOPPED
 ) else (
-    echo [UNKNOWN] Service status is !STATE!
+    if "!STATE!"=="STOPPED" (
+        echo [STOPPED] Service is STOPPED
+    ) else (
+        echo [UNKNOWN] Service status is !STATE!
+    )
 )
 
 :: Admin Privilege Summary
@@ -311,10 +315,12 @@ if defined IS_ADMIN (
     if defined SERVICE_ACCOUNT (
         if "!SERVICE_ACCOUNT!"=="LocalSystem" (
             echo [OK] LocalSystem account has full admin rights
-        ) else if "!SERVICE_ACCOUNT!"=="NT AUTHORITY\SYSTEM" (
-            echo [OK] SYSTEM account has full admin rights
         ) else (
-            echo [CHECK] Verify account !SERVICE_ACCOUNT! has admin rights
+            if "!SERVICE_ACCOUNT!"=="NT AUTHORITY\SYSTEM" (
+                echo [OK] SYSTEM account has full admin rights
+            ) else (
+                echo [CHECK] Verify account !SERVICE_ACCOUNT! has admin rights
+            )
         )
     )
 )
