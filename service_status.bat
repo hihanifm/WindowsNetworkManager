@@ -152,7 +152,7 @@ if %errorLevel% neq 0 (
 )
 echo.
 
-:: 5. Check if DLL exists
+REM 5. Check if DLL exists
 echo [5] WinDivert.dll Check:
 echo ----------------------------------------
 set DLL_FOUND=0
