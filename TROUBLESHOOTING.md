@@ -393,7 +393,7 @@ If you've created the rule but it still doesn't work:
 
 ## WinDivert Errors
 
-### "Failed to open WinDivert handle"
+### "Failed to open WinDivert handle" or "DLL is not loaded"
 
 **Causes and Solutions:**
 
@@ -403,21 +403,73 @@ If you've created the rule but it still doesn't work:
 
 2. **Missing WinDivert.dll:**
    - DLL must be in the same directory as executable
+   - **When running as service:** The DLL is loaded from the same directory where the executable is located (the service's binary path)
+   - **When running manually:** The DLL is loaded from the same directory as the executable
    - Solution: Copy `WinDivert.dll` to the executable directory
+   - **To find executable directory when running as service:**
+     ```cmd
+     sc qc WindowsNetworkManager
+     ```
+     Look for `BINARY_PATH_NAME` - the DLL must be in that same directory
 
 3. **Wrong DLL Architecture:**
-   - Must use 64-bit DLL for 64-bit Windows
-   - Solution: Use DLL from `x64` folder of WinDivert package
+   - Must use the correct DLL for your Windows architecture
+   - **x64 (AMD64) Windows:** Use DLL from `x64` folder of WinDivert package
+   - **ARM64 Windows:** WinDivert may not have official ARM64 support
+   - **Solution:** 
+     - Check your Windows architecture: `systeminfo | findstr /C:"System Type"`
+     - For x64: Use `WinDivert.dll` from the `x64` folder
+     - For ARM64: You may need to check if WinDivert provides ARM64 builds, or use x64 emulation
 
-4. **WinDivert Driver Not Installed:**
+4. **ARM Windows Emulator Issues:**
+   - If running Windows on ARM (WoA) or in an ARM emulator:
+     - **Native ARM64:** WinDivert may not support ARM64 natively - check WinDivert documentation
+     - **x64 Emulation:** If emulating x64 Windows, use the x64 DLL (from `x64` folder)
+     - **How to Determine Your Architecture:**
+       
+       **Method 1: Check System Information (Recommended)**
+       ```cmd
+       systeminfo | findstr /C:"System Type"
+       ```
+       - If it shows `x64-based PC` → You're running x64 (use x64 DLL)
+       - If it shows `ARM64-based PC` → You're running native ARM64
+       
+       **Method 2: Check Processor Architecture**
+       ```cmd
+       echo %PROCESSOR_ARCHITECTURE%
+       ```
+       - `AMD64` → x64 architecture (use x64 DLL)
+       - `ARM64` → Native ARM64 architecture
+       
+       **Method 3: Check via PowerShell**
+       ```powershell
+       [Environment]::Is64BitOperatingSystem
+       Get-ComputerInfo | Select-Object CsProcessors
+       ```
+       
+       **Method 4: Check Running Processes**
+       ```cmd
+       tasklist /FI "IMAGENAME eq WindowsNetworkManager.exe"
+       ```
+       Then check Task Manager → Details tab → Right-click column headers → Select "Platform"
+       - If it shows "64-bit" and you're on ARM hardware → Likely x64 emulation
+       - If it shows "ARM64" → Native ARM64
+     
+     - **Solution:** 
+       - Determine if you're running native ARM64 or x64 emulation using the methods above
+       - **For x64 emulation:** Use the x64 DLL (from `x64` folder of WinDivert package)
+       - **For native ARM64:** Check if WinDivert provides ARM64 builds, or the DLL may not be compatible
+       - Note: The application will attempt to load the DLL from the executable directory regardless of architecture
+
+5. **WinDivert Driver Not Installed:**
    - WinDivert may require driver installation on some systems
    - Solution: Check WinDivert documentation for driver installation
 
-5. **Windows Version Incompatibility:**
+6. **Windows Version Incompatibility:**
    - Some Windows versions may not support WinDivert
    - Solution: Update Windows or check WinDivert compatibility
 
-6. **Antivirus Blocking:**
+7. **Antivirus Blocking:**
    - Some antivirus software blocks WinDivert
    - Solution: Add exception for `WindowsNetworkManager.exe` and `WinDivert.dll`
 
@@ -482,7 +534,14 @@ If you've created the rule but it still doesn't work:
 
 3. **Verify WinDivert.dll:**
    - Service runs from installation directory
-   - Ensure DLL is in the same directory as the executable
+   - **The DLL must be in the same directory as the executable**
+   - When running as a service, Windows loads DLLs from the executable's directory (not the current working directory)
+   - To find the executable directory:
+     ```cmd
+     sc qc WindowsNetworkManager
+     ```
+     Look for `BINARY_PATH_NAME` - ensure `WinDivert.dll` is in that same directory
+   - **Important:** The service uses the same DLL location as regular execution - both look in the executable directory
 
 4. **Manual Start:**
    ```cmd

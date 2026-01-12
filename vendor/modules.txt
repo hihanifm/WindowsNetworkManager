@@ -1,0 +1,14 @@
+# github.com/deblasis/godivert v1.0.1
+## explicit; go 1.19
+github.com/deblasis/godivert
+github.com/deblasis/godivert/header
+# github.com/kardianos/service v1.2.2
+## explicit; go 1.12
+github.com/kardianos/service
+# golang.org/x/sys v0.27.0
+## explicit; go 1.18
+golang.org/x/sys/windows
+golang.org/x/sys/windows/registry
+golang.org/x/sys/windows/svc
+golang.org/x/sys/windows/svc/eventlog
+golang.org/x/sys/windows/svc/mgr
