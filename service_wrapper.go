@@ -96,19 +96,36 @@ func (p *program) run() {
 	bindAddr := "0.0.0.0:" + port
 	serviceLogger.Infof("Starting web server on http://localhost:%s", port)
 
-	// Get and display local IP addresses for network access
-	localIPs := getLocalIPs()
-	if len(localIPs) > 0 {
-		serviceLogger.Info("Web interface accessible from network at:")
-		for _, ip := range localIPs {
-			serviceLogger.Infof("  http://%s:%s", ip, port)
+	// Get and display local IP addresses for network access (with retry)
+	displayLocalIPs := func() {
+		localIPs := getLocalIPs()
+		if len(localIPs) > 0 {
+			serviceLogger.Info("Web interface accessible from network at:")
+			for _, ip := range localIPs {
+				serviceLogger.Infof("  http://%s:%s", ip, port)
+			}
+		} else {
+			serviceLogger.Info("Note: Could not detect local IP addresses for network access")
+			serviceLogger.Info("The web interface is still accessible at http://localhost:18080")
+			serviceLogger.Info("To find your IP address, run: ipconfig")
+			serviceLogger.Info("Or access http://localhost:18080/api/network from the web interface")
 		}
-	} else {
-		serviceLogger.Info("Note: Could not detect local IP addresses for network access")
-		serviceLogger.Info("The web interface is still accessible at http://localhost:18080")
-		serviceLogger.Info("To find your IP address, run: ipconfig")
-		serviceLogger.Info("Or access http://localhost:18080/api/network from the web interface")
 	}
+	
+	// Try immediately
+	displayLocalIPs()
+	
+	// Retry after a delay in case network interfaces weren't ready
+	go func() {
+		time.Sleep(3 * time.Second)
+		localIPs := getLocalIPs()
+		if len(localIPs) > 0 {
+			serviceLogger.Info("Network IP addresses detected (retry):")
+			for _, ip := range localIPs {
+				serviceLogger.Infof("  http://%s:%s", ip, port)
+			}
+		}
+	}()
 
 	serviceLogger.Info("Note: This application requires Administrator privileges to intercept packets")
 	serviceLogger.Infof("Note: Windows Firewall may need to allow incoming connections on port %s", port)
