@@ -63,28 +63,29 @@ echo ----------------------------------------
 set EXE_PATH=
 set EXE_DIR=
 for /f "tokens=2* delims==" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "BINARY_PATH_NAME"') do (
-    :: Remove quotes if present and trim spaces
-    set "EXE_PATH=%%a"
-    set "EXE_PATH=!EXE_PATH:"=!"
-    set "EXE_PATH=!EXE_PATH: =!"
-    if "%%b" neq "" (
-        set "EXE_PATH=!EXE_PATH! %%b"
-        set "EXE_PATH=!EXE_PATH:"=!"
-    )
+    :: Get the full path - handle quotes and spaces
+    set "RAW_PATH=%%a"
+    if "%%b" neq "" set "RAW_PATH=!RAW_PATH! %%b"
+    :: Remove quotes
+    set "EXE_PATH=!RAW_PATH:"=!"
+    :: Trim leading/trailing spaces
+    for /f "tokens=* delims= " %%p in ("!EXE_PATH!") do set "EXE_PATH=%%p"
     echo Service executable path: !EXE_PATH!
+    :: Extract directory from path
+    for %%f in ("!EXE_PATH!") do set "EXE_DIR=%%~dpf"
+    :: Remove trailing backslash
+    if "!EXE_DIR:~-1!"=="\" set "EXE_DIR=!EXE_DIR:~0,-1!"
     if exist "!EXE_PATH!" (
         echo Executable exists: YES
         for %%b in ("!EXE_PATH!") do (
             echo File size: %%~zb bytes
             echo Modified: %%~tb
-            set "EXE_DIR=%%~dpb"
         )
     ) else (
         echo Executable exists: NO - ERROR!
         echo Checking path: !EXE_PATH!
-        :: Try to extract directory anyway for DLL check
-        for %%b in ("!EXE_PATH!") do set "EXE_DIR=%%~dpb"
     )
+    echo Extracted directory: !EXE_DIR!
 )
 echo.
 
@@ -93,11 +94,8 @@ echo [5] WinDivert.dll Check:
 echo ----------------------------------------
 set DLL_FOUND=0
 if defined EXE_DIR (
-    :: Remove trailing backslash if present
-    set "EXE_DIR=!EXE_DIR:~0,-1!"
-    set "EXE_DIR=!EXE_DIR!\"
     echo Service executable directory: !EXE_DIR!
-    set "DLL_PATH=!EXE_DIR!WinDivert.dll"
+    set "DLL_PATH=!EXE_DIR!\WinDivert.dll"
     echo Checking for DLL at: !DLL_PATH!
     if exist "!DLL_PATH!" (
         echo WinDivert.dll found: YES
@@ -112,23 +110,32 @@ if defined EXE_DIR (
         echo Expected location: !DLL_PATH!
         echo.
         echo Debugging info:
-        echo   EXE_DIR variable: !EXE_DIR!
-        echo   DLL_PATH variable: !DLL_PATH!
-        echo   Directory exists: 
+        echo   EXE_DIR variable: [!EXE_DIR!]
+        echo   DLL_PATH variable: [!DLL_PATH!]
+        echo   EXE_DIR exists check:
         if exist "!EXE_DIR!" (
-            echo     YES
+            echo     Directory exists: YES
             echo   Directory contents:
-            dir /B "!EXE_DIR!" 2>nul | findstr /I "WinDivert"
+            dir /B "!EXE_DIR!" 2>nul
+            echo.
+            echo   Looking for DLL files:
+            dir /B "!EXE_DIR!\*.dll" 2>nul
         ) else (
-            echo     NO
+            echo     Directory exists: NO
         )
     )
 ) else (
     echo ERROR: Could not determine executable directory
     echo Service may not be installed or BINARY_PATH_NAME not found
     echo.
-    echo Debug: Attempting to query service again...
+    echo Debug: Service query output:
     sc qc %SERVICE_NAME% 2>nul | findstr "BINARY_PATH_NAME"
+    echo.
+    echo Raw BINARY_PATH_NAME value:
+    for /f "tokens=2* delims==" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "BINARY_PATH_NAME"') do (
+        echo [%%a]
+        if "%%b" neq "" echo [%%b]
+    )
 )
 if !DLL_FOUND! equ 0 (
     if not defined EXE_DIR (
