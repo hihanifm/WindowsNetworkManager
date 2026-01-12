@@ -16,6 +16,53 @@ import (
 	"WindowsNetworkManager/version"
 )
 
+// logger is a unified logging interface that works for both console and service modes
+type logger struct {
+	useServiceLogger bool
+}
+
+var appLogger = &logger{useServiceLogger: false}
+
+// logInfo logs an informational message
+func (l *logger) Info(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	if l.useServiceLogger && serviceLogger != nil {
+		serviceLogger.Info(msg)
+	} else {
+		log.Printf("[INFO] %s", msg)
+	}
+}
+
+// logError logs an error message
+func (l *logger) Error(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	if l.useServiceLogger && serviceLogger != nil {
+		serviceLogger.Error(msg)
+	} else {
+		log.Printf("[ERROR] %s", msg)
+	}
+}
+
+// logDebug logs a debug message
+func (l *logger) Debug(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	if l.useServiceLogger && serviceLogger != nil {
+		serviceLogger.Info("[DEBUG] " + msg)
+	} else {
+		log.Printf("[DEBUG] %s", msg)
+	}
+}
+
+// logHTTP logs HTTP request/response
+func (l *logger) HTTP(method, path string, statusCode int, duration time.Duration) {
+	msg := fmt.Sprintf("%s %s - %d - %v", method, path, statusCode, duration)
+	if l.useServiceLogger && serviceLogger != nil {
+		serviceLogger.Info("[HTTP] " + msg)
+	} else {
+		log.Printf("[HTTP] %s", msg)
+	}
+}
+
 var (
 	currentDelay time.Duration
 	delayMutex   sync.RWMutex
@@ -137,30 +184,39 @@ func main() {
 	}
 
 	// Running in console mode (not as service)
+	appLogger.useServiceLogger = false
+	appLogger.Info("Starting Windows Network Manager in console mode")
+	appLogger.Info("Version: %s", version.Version)
+	
 	// Get executable directory for web files
 	if err := os.Chdir(exeDir); err != nil {
-		log.Printf("Warning: Failed to change directory: %v", err)
+		appLogger.Error("Failed to change directory: %v", err)
+	} else {
+		appLogger.Debug("Working directory: %s", exeDir)
 	}
 
 	// Initialize packet stats
 	packetStats.StartTime = time.Now()
+	appLogger.Debug("Packet stats initialized")
 
 	// Initialize upgrade manager
 	if err := initUpgradeManager(); err != nil {
-		log.Printf("Warning: Failed to initialize upgrade manager: %v", err)
+		appLogger.Error("Failed to initialize upgrade manager: %v", err)
+	} else {
+		appLogger.Debug("Upgrade manager initialized")
 	}
 
-	// Setup HTTP routes
-	http.HandleFunc("/", serveIndex)
-	http.HandleFunc("/api/config", handleConfig)
-	http.HandleFunc("/api/stats", handleStats)
-	http.HandleFunc("/api/start", handleStart)
-	http.HandleFunc("/api/stop", handleStop)
-	http.HandleFunc("/api/network", handleNetwork)
-	http.HandleFunc("/api/discover", handleDiscover)
-	http.HandleFunc("/api/upgrade/check", handleUpgradeCheck)
-	http.HandleFunc("/api/upgrade", handleUpgrade)
-	http.HandleFunc("/api/upgrade/status", handleUpgradeStatus)
+	// Setup HTTP routes with logging middleware
+	http.HandleFunc("/", logHTTPMiddleware(serveIndex))
+	http.HandleFunc("/api/config", logHTTPMiddleware(handleConfig))
+	http.HandleFunc("/api/stats", logHTTPMiddleware(handleStats))
+	http.HandleFunc("/api/start", logHTTPMiddleware(handleStart))
+	http.HandleFunc("/api/stop", logHTTPMiddleware(handleStop))
+	http.HandleFunc("/api/network", logHTTPMiddleware(handleNetwork))
+	http.HandleFunc("/api/discover", logHTTPMiddleware(handleDiscover))
+	http.HandleFunc("/api/upgrade/check", logHTTPMiddleware(handleUpgradeCheck))
+	http.HandleFunc("/api/upgrade", logHTTPMiddleware(handleUpgrade))
+	http.HandleFunc("/api/upgrade/status", logHTTPMiddleware(handleUpgradeStatus))
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
@@ -168,32 +224,63 @@ func main() {
 
 	// Bind to all interfaces (0.0.0.0) to allow network access
 	bindAddr := "0.0.0.0:" + *port
-	log.Printf("Starting web server on http://localhost:%s", *port)
+	appLogger.Info("Starting web server on http://localhost:%s", *port)
 
 	// Get and display local IP addresses for network access
 	localIPs := getLocalIPs()
 	if len(localIPs) > 0 {
-		log.Println("Web interface accessible from network at:")
+		appLogger.Info("Web interface accessible from network at:")
 		for _, ip := range localIPs {
-			log.Printf("  http://%s:%s", ip, *port)
+			appLogger.Info("  http://%s:%s", ip, *port)
 		}
 	} else {
-		log.Println("Note: Could not detect local IP addresses for network access")
-		log.Println("The web interface is still accessible at http://localhost:18080")
-		log.Println("To find your IP address, run: ipconfig")
-		log.Println("Or access http://localhost:18080/api/network from the web interface")
+		appLogger.Info("Note: Could not detect local IP addresses for network access")
+		appLogger.Info("The web interface is still accessible at http://localhost:18080")
+		appLogger.Info("To find your IP address, run: ipconfig")
+		appLogger.Info("Or access http://localhost:18080/api/network from the web interface")
 	}
 
-	log.Println("Note: This application requires Administrator privileges to intercept packets")
-	log.Println("Note: Windows Firewall may need to allow incoming connections on port", *port)
-	log.Println("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
+	appLogger.Info("Note: This application requires Administrator privileges to intercept packets")
+	appLogger.Info("Note: Windows Firewall may need to allow incoming connections on port %s", *port)
+	appLogger.Info("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
+	appLogger.Info("Server ready and listening on %s", bindAddr)
 
 	if err := http.ListenAndServe(bindAddr, nil); err != nil {
+		appLogger.Error("Failed to start server: %v", err)
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
 
+// logHTTPMiddleware wraps HTTP handlers with logging
+func logHTTPMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		
+		// Create a response writer wrapper to capture status code
+		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		
+		// Call the actual handler
+		next(rw, r)
+		
+		// Log the request
+		duration := time.Since(start)
+		appLogger.HTTP(r.Method, r.URL.Path, rw.statusCode, duration)
+	}
+}
+
+// responseWriter wraps http.ResponseWriter to capture status code
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
 func serveIndex(w http.ResponseWriter, r *http.Request) {
+	appLogger.Debug("Serving index page")
 	http.ServeFile(w, r, "./web/index.html")
 }
 
@@ -202,6 +289,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
+		appLogger.Debug("GET /api/config - retrieving current configuration")
 		delayMutex.RLock()
 		delayMs := currentDelay.Milliseconds()
 		delayMutex.RUnlock()
@@ -210,6 +298,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		running := isRunning
 		runningMutex.RUnlock()
 
+		appLogger.Debug("Current config - Delay: %d ms, Running: %v", delayMs, running)
 		json.NewEncoder(w).Encode(ConfigResponse{
 			DelayMs:   delayMs,
 			IsRunning: running,
@@ -221,11 +310,15 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			appLogger.Error("POST /api/config - Invalid request: %v", err)
 			http.Error(w, `{"error": "Invalid request"}`, http.StatusBadRequest)
 			return
 		}
 
+		appLogger.Debug("POST /api/config - Setting delay to %d ms", req.DelayMs)
+
 		if req.DelayMs < 0 || req.DelayMs > 10000 {
+			appLogger.Error("POST /api/config - Invalid delay value: %d ms", req.DelayMs)
 			json.NewEncoder(w).Encode(ConfigResponse{
 				Error: "Delay must be between 0 and 10000 milliseconds",
 			})
@@ -239,9 +332,12 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		// Update delay in running packet engine
 		if packetEngine != nil {
 			packetEngine.SetDelay(currentDelay)
+			appLogger.Debug("Updated delay in running packet engine")
+		} else {
+			appLogger.Debug("Packet engine not running, delay will be applied when started")
 		}
 
-		log.Printf("Delay updated to %d ms", req.DelayMs)
+		appLogger.Info("Delay updated to %d ms", req.DelayMs)
 
 		runningMutex.RLock()
 		running := isRunning
@@ -253,18 +349,23 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		})
 
 	default:
+		appLogger.Error("Method not allowed: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	appLogger.Debug("GET /api/stats - retrieving statistics")
 
 	statsMutex.RLock()
 	stats := *packetStats
 	statsMutex.RUnlock()
 
 	uptime := time.Since(stats.StartTime).Seconds()
+
+	appLogger.Debug("Stats - Packets: %d, Delayed: %d, Bytes: %d, Uptime: %.2fs",
+		stats.TotalPackets, stats.DelayedPackets, stats.BytesProcessed, uptime)
 
 	json.NewEncoder(w).Encode(StatsResponse{
 		TotalPackets:   stats.TotalPackets,
@@ -276,10 +377,12 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 
 func handleStart(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	appLogger.Info("POST /api/start - Starting packet interception")
 
 	runningMutex.Lock()
 	if isRunning {
 		runningMutex.Unlock()
+		appLogger.Error("Packet interception already running")
 		json.NewEncoder(w).Encode(ConfigResponse{
 			Error: "Packet interception is already running",
 		})
@@ -293,6 +396,8 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	delay := currentDelay
 	delayMutex.RUnlock()
 
+	appLogger.Debug("Starting packet engine with delay: %v", delay)
+
 	// Start packet interception
 	var err error
 	packetEngine, err = NewPacketEngine(delay)
@@ -300,6 +405,7 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		runningMutex.Lock()
 		isRunning = false
 		runningMutex.Unlock()
+		appLogger.Error("Failed to start packet interception: %v", err)
 		json.NewEncoder(w).Encode(ConfigResponse{
 			Error: fmt.Sprintf("Failed to start packet interception: %v", err),
 		})
@@ -308,7 +414,7 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 
 	go packetEngine.Start()
 
-	log.Println("Packet interception started")
+	appLogger.Info("Packet interception started successfully")
 	json.NewEncoder(w).Encode(ConfigResponse{
 		IsRunning: true,
 	})
@@ -316,10 +422,12 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 
 func handleStop(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	appLogger.Info("POST /api/stop - Stopping packet interception")
 
 	runningMutex.Lock()
 	if !isRunning {
 		runningMutex.Unlock()
+		appLogger.Error("Packet interception is not running")
 		json.NewEncoder(w).Encode(ConfigResponse{
 			Error: "Packet interception is not running",
 		})
@@ -330,11 +438,13 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 
 	// Stop packet interception
 	if packetEngine != nil {
+		appLogger.Debug("Stopping packet engine")
 		packetEngine.Stop()
 		packetEngine = nil
+		appLogger.Debug("Packet engine stopped")
 	}
 
-	log.Println("Packet interception stopped")
+	appLogger.Info("Packet interception stopped successfully")
 	json.NewEncoder(w).Encode(ConfigResponse{
 		IsRunning: false,
 	})
@@ -342,8 +452,10 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 
 func handleNetwork(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	appLogger.Debug("GET /api/network - Retrieving network information")
 
 	localIPs := getLocalIPs()
+	appLogger.Debug("Detected %d local IP addresses", len(localIPs))
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"local_ips": localIPs,
 		"port":      "18080",
@@ -352,6 +464,7 @@ func handleNetwork(w http.ResponseWriter, r *http.Request) {
 
 func handleDiscover(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	appLogger.Debug("GET /api/discover - Discovery request from %s", r.RemoteAddr)
 
 	localIPs := getLocalIPs()
 	runningMutex.RLock()
@@ -362,6 +475,7 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 	delayMs := currentDelay.Milliseconds()
 	delayMutex.RUnlock()
 
+	appLogger.Debug("Discovery response - Version: %s, Running: %v, Delay: %d ms", version.Version, running, delayMs)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":    version.ServiceName,
 		"version":    version.Version,
@@ -377,7 +491,14 @@ func updateStats(packets, bytes uint64) {
 	packetStats.TotalPackets += packets
 	packetStats.DelayedPackets += packets
 	packetStats.BytesProcessed += bytes
+	total := packetStats.TotalPackets
 	statsMutex.Unlock()
+	
+	// Log stats periodically (every 1000 packets)
+	if total%1000 == 0 && total > 0 {
+		appLogger.Debug("Packet stats - Total: %d, Delayed: %d, Bytes: %d", 
+			packetStats.TotalPackets, packetStats.DelayedPackets, packetStats.BytesProcessed)
+	}
 }
 
 // getLocalIPs returns a list of local IP addresses (excluding loopback)
