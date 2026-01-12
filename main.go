@@ -27,13 +27,8 @@ func isRunningAsAdmin() bool {
 	}
 	
 	// Use Windows API to check if process token is elevated
-	token, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		// If we can't open the token, assume not admin
-		return false
-	}
-	defer token.Close()
-	
+	// This is the same method used by WinDivert library
+	token := windows.GetCurrentProcessToken()
 	return token.IsElevated()
 }
 
