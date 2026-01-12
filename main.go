@@ -200,14 +200,12 @@ func main() {
 
 	// Only show admin privilege note if not running as admin
 	if !isRunningAsAdmin() {
-		appLogger.Info("WARNING: Not running as Administrator - packet interception may not work")
-		appLogger.Info("Please run as Administrator for full functionality")
-	} else {
-		appLogger.Debug("Running with Administrator privileges")
+		log.Println("WARNING: Not running as Administrator - packet interception may not work")
+		log.Println("Please run as Administrator for full functionality")
 	}
 	
-	appLogger.Info("Note: Windows Firewall may need to allow incoming connections on port %s", *port)
-	appLogger.Info("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
+	log.Printf("Note: Windows Firewall may need to allow incoming connections on port %s", *port)
+	log.Println("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
 
 	if err := http.ListenAndServe(bindAddr, nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
