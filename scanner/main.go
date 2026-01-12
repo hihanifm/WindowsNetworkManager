@@ -5,6 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
+	"strings"
 	"time"
 
 	"WindowsNetworkManager/version"
@@ -35,14 +38,20 @@ func main() {
 	// Check for web mode first
 	flag.Parse()
 	if *webMode {
+		// Only allow web mode when run as a service (by launchd)
+		if !isRunningAsService() {
+			fmt.Fprintf(os.Stderr, "Error: Web server mode can only be run as a service.\n")
+			fmt.Fprintf(os.Stderr, "Please use: ./start_service.sh\n")
+			os.Exit(1)
+		}
 		startWebServer(*webPort)
 		return
 	}
 
-	// If no flags and no args, default to web mode
+	// If no flags and no args, don't default to web mode - show usage instead
 	if len(os.Args) == 1 {
-		startWebServer(DefaultWebPort)
-		return
+		printUsage()
+		os.Exit(1)
 	}
 
 	if len(os.Args) < 2 {
@@ -147,4 +156,31 @@ func outputTable(instances []InstanceInfo) {
 			inst.IP, status, inst.DelayMs, inst.IP, inst.Port)
 	}
 	fmt.Println()
+}
+
+// isRunningAsService checks if the process is being run by launchd (macOS service)
+func isRunningAsService() bool {
+	if runtime.GOOS != "darwin" {
+		// On non-macOS, allow direct execution
+		return true
+	}
+	
+	// Check parent process name
+	ppid := os.Getppid()
+	if ppid == 1 {
+		// Parent is PID 1 (launchd), we're running as a service
+		return true
+	}
+	
+	// Check if parent process is launchd
+	cmd := exec.Command("ps", "-p", fmt.Sprintf("%d", ppid), "-o", "comm=")
+	output, err := cmd.Output()
+	if err == nil {
+		parentName := strings.TrimSpace(string(output))
+		if strings.Contains(parentName, "launchd") {
+			return true
+		}
+	}
+	
+	return false
 }
