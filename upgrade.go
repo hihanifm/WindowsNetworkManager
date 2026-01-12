@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,6 +46,7 @@ type UpgradeManager struct {
 	exeDir     string
 	backupPath string
 	tempPath   string
+	zipPath    string
 }
 
 type GitHubRelease struct {
@@ -69,6 +71,7 @@ func initUpgradeManager() error {
 		exeDir:     exeDir,
 		backupPath: filepath.Join(exeDir, exeName+".backup"),
 		tempPath:   filepath.Join(exeDir, exeName+".new"),
+		zipPath:    filepath.Join(exeDir, "upgrade.zip"),
 	}
 
 	upgradeStatus = &UpgradeStatus{
@@ -124,12 +127,21 @@ func CheckForUpdates(updateURL string) (*UpgradeStatus, error) {
 	// Extract version from tag (remove 'v' prefix if present)
 	latestVersion := strings.TrimPrefix(release.TagName, "v")
 
-	// Find Windows executable asset
+	// Find ZIP file asset (preferred) or EXE file asset
 	var downloadURL string
 	for _, asset := range release.Assets {
-		if strings.HasSuffix(asset.Name, ".exe") && strings.Contains(asset.Name, "WindowsNetworkManager") {
+		if strings.HasSuffix(asset.Name, ".zip") && strings.Contains(asset.Name, "WindowsNetworkManager") {
 			downloadURL = asset.BrowserDownloadURL
 			break
+		}
+	}
+	// Fallback to EXE if ZIP not found
+	if downloadURL == "" {
+		for _, asset := range release.Assets {
+			if strings.HasSuffix(asset.Name, ".exe") && strings.Contains(asset.Name, "WindowsNetworkManager") {
+				downloadURL = asset.BrowserDownloadURL
+				break
+			}
 		}
 	}
 
@@ -176,7 +188,7 @@ func compareVersions(v1, v2 string) int {
 	return 0
 }
 
-// DownloadUpdate downloads the new executable
+// DownloadUpdate downloads the update (ZIP or EXE)
 func DownloadUpdate(downloadURL string) error {
 	if upgradeManager == nil {
 		return fmt.Errorf("upgrade manager not initialized")
@@ -209,8 +221,17 @@ func DownloadUpdate(downloadURL string) error {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
+	// Determine if it's a ZIP or EXE file
+	isZIP := strings.HasSuffix(downloadURL, ".zip")
+	var outPath string
+	if isZIP {
+		outPath = upgradeManager.zipPath
+	} else {
+		outPath = upgradeManager.tempPath
+	}
+
 	// Create temp file
-	outFile, err := os.Create(upgradeManager.tempPath)
+	outFile, err := os.Create(outPath)
 	if err != nil {
 		upgradeMutex.Lock()
 		upgradeStatus.Status = "error"
@@ -230,7 +251,7 @@ func DownloadUpdate(downloadURL string) error {
 		if n > 0 {
 			written, writeErr := outFile.Write(buf[:n])
 			if writeErr != nil {
-				os.Remove(upgradeManager.tempPath)
+				os.Remove(outPath)
 				upgradeMutex.Lock()
 				upgradeStatus.Status = "error"
 				upgradeStatus.Error = fmt.Sprintf("Write failed: %v", writeErr)
@@ -252,7 +273,7 @@ func DownloadUpdate(downloadURL string) error {
 			break
 		}
 		if err != nil {
-			os.Remove(upgradeManager.tempPath)
+			os.Remove(outPath)
 			upgradeMutex.Lock()
 			upgradeStatus.Status = "error"
 			upgradeStatus.Error = fmt.Sprintf("Download error: %v", err)
@@ -275,8 +296,16 @@ func InstallUpdate() error {
 	upgradeStatus.Progress = "Installing update..."
 	upgradeMutex.Unlock()
 
-	// Verify temp file exists
-	if _, err := os.Stat(upgradeManager.tempPath); os.IsNotExist(err) {
+	// Check if ZIP file exists (preferred) or EXE file
+	var isZIP bool
+	var sourcePath string
+	if _, err := os.Stat(upgradeManager.zipPath); err == nil {
+		isZIP = true
+		sourcePath = upgradeManager.zipPath
+	} else if _, err := os.Stat(upgradeManager.tempPath); err == nil {
+		isZIP = false
+		sourcePath = upgradeManager.tempPath
+	} else {
 		upgradeMutex.Lock()
 		upgradeStatus.Status = "error"
 		upgradeStatus.Error = "Downloaded file not found"
@@ -307,23 +336,41 @@ func InstallUpdate() error {
 		return err
 	}
 
-	// Replace executable
-	upgradeMutex.Lock()
-	upgradeStatus.Progress = "Installing new version..."
-	upgradeMutex.Unlock()
-
-	if err := copyFile(upgradeManager.tempPath, upgradeManager.exePath); err != nil {
-		// Try to restore backup
-		copyFile(upgradeManager.backupPath, upgradeManager.exePath)
+	// Extract and install files
+	if isZIP {
 		upgradeMutex.Lock()
-		upgradeStatus.Status = "error"
-		upgradeStatus.Error = fmt.Sprintf("Installation failed: %v", err)
+		upgradeStatus.Progress = "Extracting update package..."
 		upgradeMutex.Unlock()
-		return err
+
+		if err := extractAndInstallZIP(sourcePath); err != nil {
+			// Try to restore backup
+			copyFile(upgradeManager.backupPath, upgradeManager.exePath)
+			upgradeMutex.Lock()
+			upgradeStatus.Status = "error"
+			upgradeStatus.Error = fmt.Sprintf("Installation failed: %v", err)
+			upgradeMutex.Unlock()
+			return err
+		}
+	} else {
+		// Legacy: just replace executable
+		upgradeMutex.Lock()
+		upgradeStatus.Progress = "Installing new version..."
+		upgradeMutex.Unlock()
+
+		if err := copyFile(sourcePath, upgradeManager.exePath); err != nil {
+			// Try to restore backup
+			copyFile(upgradeManager.backupPath, upgradeManager.exePath)
+			upgradeMutex.Lock()
+			upgradeStatus.Status = "error"
+			upgradeStatus.Error = fmt.Sprintf("Installation failed: %v", err)
+			upgradeMutex.Unlock()
+			return err
+		}
 	}
 
-	// Cleanup temp file
+	// Cleanup temp files
 	os.Remove(upgradeManager.tempPath)
+	os.Remove(upgradeManager.zipPath)
 
 	// Restart service
 	upgradeMutex.Lock()
@@ -340,6 +387,89 @@ func InstallUpdate() error {
 	upgradeStatus.Progress = "Upgrade completed successfully!"
 	upgradeStatus.CompletedAt = time.Now()
 	upgradeMutex.Unlock()
+
+	return nil
+}
+
+// extractAndInstallZIP extracts the ZIP file and installs all necessary files
+func extractAndInstallZIP(zipPath string) error {
+	// Open ZIP file
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("failed to open ZIP file: %v", err)
+	}
+	defer r.Close()
+
+	// Extract files
+	for _, f := range r.File {
+		// Skip directories
+		if f.FileInfo().IsDir() {
+			continue
+		}
+
+		// Determine destination path
+		var destPath string
+		fileName := f.Name
+
+		// Handle different file types
+		if fileName == "WindowsNetworkManager.exe" {
+			destPath = upgradeManager.exePath
+		} else if fileName == "WinDivert.dll" {
+			destPath = filepath.Join(upgradeManager.exeDir, "WinDivert.dll")
+		} else if strings.HasPrefix(fileName, "web/") {
+			// Extract web directory files
+			relPath := strings.TrimPrefix(fileName, "web/")
+			destPath = filepath.Join(upgradeManager.exeDir, "web", relPath)
+			// Create directory if needed
+			if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+				log.Printf("Warning: Failed to create directory for %s: %v", destPath, err)
+				continue
+			}
+		} else {
+			// Skip other files (batch files, etc.) - they're optional
+			continue
+		}
+
+		// Open file from ZIP
+		rc, err := f.Open()
+		if err != nil {
+			log.Printf("Warning: Failed to open %s from ZIP: %v", fileName, err)
+			continue
+		}
+
+		// Create destination file
+		destFile, err := os.Create(destPath)
+		if err != nil {
+			rc.Close()
+			log.Printf("Warning: Failed to create %s: %v", destPath, err)
+			continue
+		}
+
+		// Copy file contents
+		_, err = io.Copy(destFile, rc)
+		rc.Close()
+		destFile.Close()
+
+		if err != nil {
+			log.Printf("Warning: Failed to extract %s: %v", fileName, err)
+			continue
+		}
+
+		// Update progress for important files
+		if fileName == "WindowsNetworkManager.exe" {
+			upgradeMutex.Lock()
+			upgradeStatus.Progress = "Installing executable..."
+			upgradeMutex.Unlock()
+		} else if fileName == "WinDivert.dll" {
+			upgradeMutex.Lock()
+			upgradeStatus.Progress = "Installing WinDivert.dll..."
+			upgradeMutex.Unlock()
+		} else if strings.HasPrefix(fileName, "web/") {
+			upgradeMutex.Lock()
+			upgradeStatus.Progress = fmt.Sprintf("Installing web files... (%s)", fileName)
+			upgradeMutex.Unlock()
+		}
+	}
 
 	return nil
 }
