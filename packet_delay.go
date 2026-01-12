@@ -71,11 +71,16 @@ func initWinDivertDLL() error {
 
 // NewPacketEngine creates a new packet engine instance
 func NewPacketEngine(delay time.Duration) (*PacketEngine, error) {
+	log.Printf("Initializing packet engine with delay: %v", delay)
+	
 	// Ensure DLL is loaded before creating handle
 	if !godivert.IsDLLLoaded() {
+		log.Printf("DLL not loaded, initializing...")
 		if err := initWinDivertDLL(); err != nil {
 			return nil, fmt.Errorf("WinDivert DLL not initialized: %v", err)
 		}
+	} else {
+		log.Printf("WinDivert DLL already loaded")
 	}
 	
 	// WinDivert filter: capture all outbound packets
@@ -83,23 +88,44 @@ func NewPacketEngine(delay time.Duration) (*PacketEngine, error) {
 	filter := "outbound"
 
 	log.Printf("Creating WinDivert handle with filter: %s", filter)
+	log.Printf("Note: This requires Administrator privileges")
+	
 	handle, err := godivert.NewWinDivertHandle(filter)
 	if err != nil {
-		// Provide more helpful error message
-		if err.Error() == "WinDivert DLL not loaded" {
+		// Provide more helpful error message based on error type
+		errStr := err.Error()
+		
+		if errStr == "WinDivert DLL not loaded" {
 			return nil, fmt.Errorf("WinDivert DLL not loaded. Please ensure WinDivert.dll is in the same directory as WindowsNetworkManager.exe. Error: %v", err)
 		}
-		// Check for invalid handle errors
-		errStr := err.Error()
-		if contains(errStr, "invalid handle") || contains(errStr, "INVALID_HANDLE") {
-			return nil, fmt.Errorf("WinDivert handle is invalid. Common causes: 1) Not running as Administrator, 2) WinDivert driver not installed, 3) Another application using WinDivert, 4) Insufficient privileges. Original error: %v", err)
+		
+		// Check for access denied (errno 5)
+		if contains(errStr, "access denied") || contains(errStr, "errno: 5") {
+			return nil, fmt.Errorf("Access denied: You must run as Administrator. WinDivert requires Administrator privileges to create a handle. Please right-click and select 'Run as Administrator'")
 		}
-		return nil, fmt.Errorf("failed to create WinDivert handle: %v. Make sure you are running as Administrator and WinDivert driver is properly installed", err)
+		
+		// Check for driver not installed (errno 577)
+		if contains(errStr, "driver not installed") || contains(errStr, "errno: 577") {
+			return nil, fmt.Errorf("WinDivert driver not installed or started. The WinDivert.sys driver file may be missing or the driver service is not running. Check Windows Event Log for driver errors")
+		}
+		
+		// Check for invalid parameter (errno 87)
+		if contains(errStr, "invalid parameter") || contains(errStr, "errno: 87") {
+			return nil, fmt.Errorf("Invalid filter parameter. Filter syntax error in: '%s'. This should not happen with 'outbound' filter", filter)
+		}
+		
+		// Check for invalid handle errors
+		if contains(errStr, "invalid handle") || contains(errStr, "INVALID_HANDLE") || contains(errStr, "handle is nil") {
+			return nil, fmt.Errorf("WinDivert handle is invalid. Common causes: 1) Not running as Administrator, 2) WinDivert driver (WinDivert.sys) not installed, 3) Another application already using WinDivert, 4) Insufficient privileges, 5) WinDivert driver service not started. Original error: %v", err)
+		}
+		
+		// Generic error with troubleshooting tips
+		return nil, fmt.Errorf("failed to create WinDivert handle: %v. Troubleshooting: 1) Ensure you are running as Administrator, 2) Verify WinDivert.dll and WinDivert.sys are present, 3) Check Windows Event Log for driver errors, 4) Try restarting the application", err)
 	}
 	
 	// Verify handle is valid
 	if handle == nil {
-		return nil, fmt.Errorf("WinDivert handle is nil after creation. This usually means insufficient privileges or WinDivert driver issue. Please run as Administrator")
+		return nil, fmt.Errorf("WinDivert handle is nil after creation. This usually means: 1) Insufficient privileges (not running as Administrator), 2) WinDivert driver issue, 3) System resource limitation. Please run as Administrator and check Windows Event Log")
 	}
 	
 	log.Printf("WinDivert handle created successfully")
