@@ -388,6 +388,7 @@ func InstallUpdate() error {
 	upgradeMutex.Lock()
 	upgradeStatus.Status = "completed"
 	upgradeStatus.Progress = "Upgrade completed successfully!"
+	upgradeStatus.CurrentVersion = version.Version // Update to new version after upgrade
 	upgradeStatus.CompletedAt = time.Now()
 	upgradeMutex.Unlock()
 

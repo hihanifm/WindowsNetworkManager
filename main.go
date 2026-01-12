@@ -594,6 +594,9 @@ func runUpgrade(downloadURL string) {
 
 func handleUpgradeStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate") // Prevent caching
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 
 	status := GetUpgradeStatus()
 	json.NewEncoder(w).Encode(status)

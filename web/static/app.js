@@ -214,7 +214,8 @@ function showError(message) {
 
 async function loadUpgradeInfo() {
     try {
-        const response = await fetch('/api/upgrade/status');
+        // Add cache busting to ensure we get fresh version info
+        const response = await fetch('/api/upgrade/status?' + new Date().getTime());
         const status = await response.json();
         
         if (status.current_version) {
@@ -369,7 +370,12 @@ async function checkUpgradeStatus() {
                 updateInfo.style.display = 'block';
                 updateInfo.className = 'info-box';
                 updateInfo.innerHTML = '<p><strong>✓ Upgrade completed successfully!</strong></p>';
-                loadUpgradeInfo(); // Refresh version info
+                // Force refresh version info (with cache busting via API headers)
+                loadUpgradeInfo();
+                // Reload page after service restart to ensure new version is displayed
+                setTimeout(() => {
+                    location.reload(); // Force full page reload to get new version and web files
+                }, 2000);
             }, 3000);
         } else if (status.status === 'error') {
             progressFill.style.width = '0%';
