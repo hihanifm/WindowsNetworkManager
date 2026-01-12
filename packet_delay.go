@@ -151,13 +151,16 @@ func NewPacketEngine(delay time.Duration) (*PacketEngine, error) {
 	
 	log.Printf("WinDivert handle created successfully")
 	
-	// Verify handle is actually valid by checking if it's open
-	// Note: We can't directly check the internal state, but we can verify it's not nil
+	// Verify handle is actually valid by checking if it's not nil
 	if handle == nil {
 		return nil, fmt.Errorf("WinDivert handle is nil after creation - this should not happen")
 	}
 	
-	log.Printf("Handle validation: Handle object created and stored")
+	// Small delay to ensure handle is fully initialized before use
+	// Sometimes there's a brief delay between handle creation and it being ready
+	time.Sleep(50 * time.Millisecond)
+	
+	log.Printf("Handle validation: Handle object created and stored, ready for use")
 
 	return &PacketEngine{
 		handle:   handle,
