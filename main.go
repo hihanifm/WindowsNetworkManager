@@ -593,15 +593,63 @@ func handleUpgrade(w http.ResponseWriter, r *http.Request) {
 }
 
 func runUpgrade(downloadURL string) {
-	// Download
+	// Download the update
 	if err := DownloadUpdate(downloadURL); err != nil {
+		upgradeMutex.Lock()
+		upgradeStatus.Status = "error"
+		upgradeStatus.Error = fmt.Sprintf("Download failed: %v", err)
+		upgradeMutex.Unlock()
 		return
 	}
 
-	// Install
-	if err := InstallUpdate(); err != nil {
+	// Create upgrade helper script that will run in a separate process
+	// This is necessary because we can't replace the running executable
+	// The helper script will handle stopping service, replacing files, and restarting
+	if err := createUpgradeHelperScript(); err != nil {
+		upgradeMutex.Lock()
+		upgradeStatus.Status = "error"
+		upgradeStatus.Error = fmt.Sprintf("Failed to create upgrade helper: %v", err)
+		upgradeMutex.Unlock()
 		return
 	}
+
+	// Launch the upgrade helper script in a separate detached process
+	// This script will continue running even after the service stops
+	upgradeMutex.Lock()
+	upgradeStatus.Progress = "Launching upgrade helper..."
+	upgradeMutex.Unlock()
+
+	if err := launchUpgradeHelper(); err != nil {
+		upgradeMutex.Lock()
+		upgradeStatus.Status = "error"
+		upgradeStatus.Error = fmt.Sprintf("Failed to launch upgrade helper: %v", err)
+		upgradeMutex.Unlock()
+		return
+	}
+
+	// Mark as installing - the helper script will complete the upgrade
+	upgradeMutex.Lock()
+	upgradeStatus.Status = "installing"
+	upgradeStatus.Progress = "Upgrade helper launched. Service will restart shortly..."
+	upgradeMutex.Unlock()
+	
+	// Give the helper script a moment to start and initialize
+	log.Printf("[UPGRADE] Waiting for helper script to initialize...")
+	time.Sleep(3 * time.Second)
+	
+	// Stop the service so the helper script can replace files
+	// The helper script is already running and will handle the upgrade
+	if serviceInstalled := isServiceInstalled(); serviceInstalled {
+		log.Printf("[UPGRADE] Stopping service to allow upgrade...")
+		if err := stopService(); err != nil {
+			log.Printf("[UPGRADE] Warning: Failed to stop service: %v", err)
+			log.Printf("[UPGRADE] Helper script will attempt to stop it")
+		}
+	} else {
+		log.Printf("[UPGRADE] Service not installed, helper script will handle file replacement")
+	}
+	
+	log.Printf("[UPGRADE] Upgrade process initiated. Helper script will complete the upgrade.")
 }
 
 func handleUpgradeStatus(w http.ResponseWriter, r *http.Request) {

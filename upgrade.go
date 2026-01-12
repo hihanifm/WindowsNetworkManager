@@ -43,11 +43,12 @@ type UpgradeStatus struct {
 }
 
 type UpgradeManager struct {
-	exePath    string
-	exeDir     string
-	backupPath string
-	tempPath   string
-	zipPath    string
+	exePath       string
+	exeDir        string
+	backupPath    string
+	tempPath      string
+	zipPath       string
+	upgradeScript string // Path to upgrade helper script
 }
 
 type GitHubRelease struct {
@@ -68,11 +69,12 @@ func initUpgradeManager() error {
 	exeName := filepath.Base(exePath)
 
 	upgradeManager = &UpgradeManager{
-		exePath:    exePath,
-		exeDir:     exeDir,
-		backupPath: filepath.Join(exeDir, exeName+".backup"),
-		tempPath:   filepath.Join(exeDir, exeName+".new"),
-		zipPath:    filepath.Join(exeDir, "upgrade.zip"),
+		exePath:       exePath,
+		exeDir:        exeDir,
+		backupPath:    filepath.Join(exeDir, exeName+".backup"),
+		tempPath:      filepath.Join(exeDir, exeName+".new"),
+		zipPath:       filepath.Join(exeDir, "upgrade.zip"),
+		upgradeScript: filepath.Join(exeDir, "upgrade_helper.bat"),
 	}
 
 	// Note: version.Version is a compile-time constant. If the binary was compiled
@@ -322,14 +324,23 @@ func InstallUpdate() error {
 		return fmt.Errorf("downloaded file not found")
 	}
 
-	// Stop the service if running
+	// Check if service is installed and stop it if running
 	upgradeMutex.Lock()
-	upgradeStatus.Progress = "Stopping service..."
+	upgradeStatus.Progress = "Checking service status..."
 	upgradeMutex.Unlock()
 
-	if err := stopService(); err != nil {
-		log.Printf("Warning: Failed to stop service: %v", err)
-		// Continue anyway - might not be running as service
+	serviceInstalled := isServiceInstalled()
+	if serviceInstalled {
+		upgradeMutex.Lock()
+		upgradeStatus.Progress = "Stopping service..."
+		upgradeMutex.Unlock()
+
+		if err := stopService(); err != nil {
+			log.Printf("Warning: Failed to stop service: %v", err)
+			// Continue anyway - might not be running as service
+		}
+	} else {
+		log.Printf("[UPGRADE] Service not installed, skipping service stop")
 	}
 
 	// Backup current executable
@@ -381,14 +392,29 @@ func InstallUpdate() error {
 	os.Remove(upgradeManager.tempPath)
 	os.Remove(upgradeManager.zipPath)
 
-	// Restart service
-	upgradeMutex.Lock()
-	upgradeStatus.Progress = "Restarting service..."
-	upgradeMutex.Unlock()
+	// Restart service if it was installed
+	if serviceInstalled {
+		upgradeMutex.Lock()
+		upgradeStatus.Progress = "Restarting service..."
+		upgradeMutex.Unlock()
 
-	if err := startService(); err != nil {
-		log.Printf("Warning: Failed to start service: %v", err)
-		// Continue - user can start manually
+		// Wait for Windows to release file handles and service to fully stop
+		log.Printf("[UPGRADE] Waiting for service to fully stop before restart...")
+		time.Sleep(3 * time.Second)
+
+		if err := startService(); err != nil {
+			errorMsg := fmt.Sprintf("Failed to start service: %v. Please start manually using: net start %s", err, ServiceName)
+			log.Printf("[UPGRADE] ERROR: %s", errorMsg)
+			upgradeMutex.Lock()
+			upgradeStatus.Error = errorMsg
+			upgradeMutex.Unlock()
+			// Don't mark as error - upgrade succeeded, just service restart failed
+			// User can start service manually
+		} else {
+			log.Printf("[UPGRADE] Service restarted successfully")
+		}
+	} else {
+		log.Printf("[UPGRADE] Service not installed, skipping service restart")
 	}
 
 	upgradeMutex.Lock()
@@ -508,14 +534,282 @@ func copyFile(src, dst string) error {
 
 // stopService stops the Windows service
 func stopService() error {
-	cmd := exec.Command("net", "stop", ServiceName)
-	return cmd.Run()
+	// Use sc stop for better control
+	cmd := exec.Command("sc", "stop", ServiceName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[UPGRADE] Service stop output: %s", string(output))
+		// Try net stop as fallback
+		cmd = exec.Command("net", "stop", ServiceName)
+		if err2 := cmd.Run(); err2 != nil {
+			return fmt.Errorf("failed to stop service: %v (net stop also failed: %v)", err, err2)
+		}
+	}
+
+	// Wait for service to fully stop (Windows needs time to release the executable)
+	log.Printf("[UPGRADE] Waiting for service to stop...")
+	time.Sleep(3 * time.Second)
+
+	return nil
 }
 
-// startService starts the Windows service
+// isServiceInstalled checks if the Windows service is installed
+func isServiceInstalled() bool {
+	cmd := exec.Command("sc", "query", ServiceName)
+	err := cmd.Run()
+	return err == nil
+}
+
+// startService starts the Windows service with retry logic
 func startService() error {
-	cmd := exec.Command("net", "start", ServiceName)
-	return cmd.Run()
+	maxRetries := 5
+	retryDelay := 2 * time.Second
+
+	for i := 0; i < maxRetries; i++ {
+		// Use sc start for better control
+		cmd := exec.Command("sc", "start", ServiceName)
+		output, err := cmd.CombinedOutput()
+		outputStr := string(output)
+
+		if err == nil {
+			log.Printf("[UPGRADE] Service started successfully")
+			// Wait a moment to ensure service is running
+			time.Sleep(2 * time.Second)
+			return nil
+		}
+
+		log.Printf("[UPGRADE] Service start attempt %d/%d failed: %v, output: %s", i+1, maxRetries, err, outputStr)
+
+		// If service is already running, that's okay
+		if strings.Contains(outputStr, "already been started") ||
+			strings.Contains(outputStr, "is already running") ||
+			strings.Contains(outputStr, "START_PENDING") {
+			log.Printf("[UPGRADE] Service is already running or starting")
+			time.Sleep(2 * time.Second)
+			return nil
+		}
+
+		// Try net start as fallback
+		if i == maxRetries-1 {
+			log.Printf("[UPGRADE] Trying net start as fallback...")
+			cmd = exec.Command("net", "start", ServiceName)
+			output2, err2 := cmd.CombinedOutput()
+			if err2 == nil {
+				log.Printf("[UPGRADE] Service started successfully using net start")
+				time.Sleep(2 * time.Second)
+				return nil
+			}
+			log.Printf("[UPGRADE] net start also failed: %v, output: %s", err2, string(output2))
+		}
+
+		// Wait before retry
+		if i < maxRetries-1 {
+			log.Printf("[UPGRADE] Retrying in %v...", retryDelay)
+			time.Sleep(retryDelay)
+			retryDelay *= 2 // Exponential backoff
+		}
+	}
+
+	return fmt.Errorf("failed to start service after %d attempts", maxRetries)
+}
+
+// createUpgradeHelperScript creates a batch script that will handle the upgrade
+// in a separate process after the current service stops
+func createUpgradeHelperScript() error {
+	scriptContent := fmt.Sprintf(`@echo off
+setlocal enabledelayedexpansion
+
+REM Upgrade Helper Script - Runs after service stops
+REM This script handles the actual file replacement and service restart
+
+echo ========================================
+echo Windows Network Manager Upgrade Helper
+echo ========================================
+echo.
+
+REM Wait for service to fully stop
+echo Waiting for service to stop...
+timeout /t 5 /nobreak >nul
+
+REM Check if service is installed
+sc query %s >nul 2>&1
+set SERVICE_INSTALLED=%%errorLevel%%
+
+if !SERVICE_INSTALLED! neq 0 (
+    echo Service not installed, skipping service operations
+    goto :install_files
+)
+
+REM Stop service if still running
+echo Stopping service...
+sc stop %s
+timeout /t 5 /nobreak >nul
+
+:install_files
+echo.
+echo Installing new version...
+
+REM Extract and install files from ZIP
+if exist "%s" (
+    echo Extracting upgrade package...
+    
+    REM Create temp extraction directory
+    set "TEMP_EXTRACT=%s\\upgrade_temp"
+    if exist "!TEMP_EXTRACT!" rmdir /s /q "!TEMP_EXTRACT!"
+    mkdir "!TEMP_EXTRACT!"
+    
+    REM Extract ZIP to temp directory using PowerShell
+    powershell -NoProfile -Command "$ErrorActionPreference='Stop'; Expand-Archive -Path '%s' -DestinationPath '!TEMP_EXTRACT!' -Force"
+    
+    if %%errorLevel%% neq 0 (
+        echo ERROR: Failed to extract ZIP file!
+        pause
+        exit /b 1
+    )
+    
+    REM Backup current executable
+    echo Backing up current version...
+    if exist "%s" copy /Y "%s" "%s" >nul 2>&1
+    
+    REM Copy new files from extracted ZIP
+    echo Copying new files...
+    
+    REM Copy executable
+    if exist "!TEMP_EXTRACT!\\WindowsNetworkManager.exe" (
+        copy /Y "!TEMP_EXTRACT!\\WindowsNetworkManager.exe" "%s" >nul
+        if %%errorLevel%% equ 0 echo   - WindowsNetworkManager.exe
+    )
+    
+    REM Copy DLL
+    if exist "!TEMP_EXTRACT!\\WinDivert.dll" (
+        copy /Y "!TEMP_EXTRACT!\\WinDivert.dll" "%s\\WinDivert.dll" >nul
+        if %%errorLevel%% equ 0 echo   - WinDivert.dll
+    )
+    
+    REM Copy web directory
+    if exist "!TEMP_EXTRACT!\\web" (
+        xcopy /E /I /Y "!TEMP_EXTRACT!\\web" "%s\\web\\" >nul
+        if %%errorLevel%% equ 0 echo   - web directory
+    )
+    
+    REM Clean up temp extraction directory
+    rmdir /s /q "!TEMP_EXTRACT!" >nul 2>&1
+    
+    REM Clean up downloaded ZIP
+    del "%s" >nul 2>&1
+) else if exist "%s" (
+    REM Legacy: just replace EXE
+    echo Replacing executable...
+    if exist "%s" copy /Y "%s" "%s" >nul 2>&1
+    copy /Y "%s" "%s" >nul
+    if %%errorLevel%% equ 0 (
+        echo   - WindowsNetworkManager.exe
+        del "%s" >nul 2>&1
+    ) else (
+        echo ERROR: Failed to replace executable!
+        pause
+        exit /b 1
+    )
+) else (
+    echo ERROR: Upgrade files not found!
+    echo Expected: %s or %s
+    pause
+    exit /b 1
+)
+
+echo.
+echo Upgrade files installed successfully!
+
+REM Restart service if it was installed
+if !SERVICE_INSTALLED! equ 0 (
+    echo.
+    echo Restarting service...
+    timeout /t 2 /nobreak >nul
+    
+    REM Try to start service with retries
+    set retries=0
+    :retry_start
+    sc start %s
+    if %%errorLevel%% equ 0 (
+        echo Service restarted successfully!
+        goto :done
+    )
+    set /a retries+=1
+    if !retries! lss 5 (
+        echo Retrying service start (attempt !retries!/5)...
+        timeout /t 2 /nobreak >nul
+        goto :retry_start
+    )
+    
+    REM Fallback to net start
+    echo Trying net start...
+    net start %s
+)
+
+:done
+echo.
+echo ========================================
+echo Upgrade completed!
+echo ========================================
+echo.
+echo The service should now be running with the new version.
+echo If the service did not start automatically, please run:
+echo   net start %s
+echo.
+timeout /t 3 /nobreak >nul
+
+REM Clean up this script
+del "%%~f0"
+`, ServiceName, ServiceName,
+		upgradeManager.zipPath,
+		upgradeManager.exeDir,
+		upgradeManager.zipPath,
+		upgradeManager.exePath, upgradeManager.exePath, upgradeManager.backupPath,
+		upgradeManager.exePath,
+		upgradeManager.exeDir,
+		upgradeManager.exeDir,
+		upgradeManager.zipPath,
+		upgradeManager.tempPath,
+		upgradeManager.exePath, upgradeManager.exePath, upgradeManager.backupPath,
+		upgradeManager.tempPath, upgradeManager.exePath,
+		upgradeManager.tempPath,
+		upgradeManager.zipPath, upgradeManager.tempPath,
+		ServiceName, ServiceName, ServiceName)
+
+	return os.WriteFile(upgradeManager.upgradeScript, []byte(scriptContent), 0755)
+}
+
+// launchUpgradeHelper launches the upgrade helper script in a separate process
+func launchUpgradeHelper() error {
+	// Use cmd.exe with /B flag to run in background, detached from parent
+	// This ensures it continues running even after the service stops
+	// /MIN starts minimized, /B runs in background
+	scriptPath := upgradeManager.upgradeScript
+
+	// Use PowerShell to launch the script in a truly detached process
+	// This ensures it survives the service stop
+	psScript := fmt.Sprintf(`Start-Process -FilePath "%s" -WindowStyle Hidden -WorkingDirectory "%s"`,
+		scriptPath, upgradeManager.exeDir)
+
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", psScript)
+	cmd.Dir = upgradeManager.exeDir
+
+	// Don't wait for the command - let it run independently
+	if err := cmd.Start(); err != nil {
+		// Fallback to cmd.exe if PowerShell fails
+		log.Printf("[UPGRADE] PowerShell launch failed, trying cmd.exe fallback: %v", err)
+		cmd = exec.Command("cmd.exe", "/C", "start", "/MIN", "/B", scriptPath)
+		cmd.Dir = upgradeManager.exeDir
+		if err2 := cmd.Start(); err2 != nil {
+			return fmt.Errorf("failed to start upgrade helper: %v (fallback also failed: %v)", err, err2)
+		}
+	}
+
+	// Detach from parent process immediately
+	cmd.Process.Release()
+
+	log.Printf("[UPGRADE] Upgrade helper script launched in detached process: %s", scriptPath)
+	return nil
 }
 
 // GetUpgradeStatus returns the current upgrade status
