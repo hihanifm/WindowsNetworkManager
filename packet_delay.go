@@ -44,6 +44,27 @@ func initWinDivertDLL() error {
 		return fmt.Errorf("WinDivert.dll not found at: %s. Please ensure WinDivert.dll is in the same directory as WindowsNetworkManager.exe", dllPath)
 	}
 	
+	// Check for driver file (.sys) - WinDivert requires both DLL and driver
+	var driverPath string
+	switch runtime.GOARCH {
+	case "amd64":
+		driverPath = filepath.Join(exeDir, "WinDivert64.sys")
+	case "arm64":
+		driverPath = filepath.Join(exeDir, "WinDivert64.sys") // ARM64 also uses 64-bit driver
+	default:
+		driverPath = filepath.Join(exeDir, "WinDivert32.sys")
+	}
+	
+	// Note: Driver file check is informational - the driver might be in system32
+	// But we should warn if it's not in the executable directory
+	if _, err := os.Stat(driverPath); os.IsNotExist(err) {
+		log.Printf("Warning: WinDivert driver file (%s) not found in executable directory", filepath.Base(driverPath))
+		log.Printf("Note: The driver file may be in System32 or loaded from another location")
+		log.Printf("If you encounter 'invalid handle' errors, ensure WinDivert driver is properly installed")
+	} else {
+		log.Printf("WinDivert driver file found: %s", driverPath)
+	}
+	
 	// For LoadDLL, we need to provide both 64-bit and 32-bit paths
 	var path64, path32 string
 	
@@ -129,6 +150,14 @@ func NewPacketEngine(delay time.Duration) (*PacketEngine, error) {
 	}
 	
 	log.Printf("WinDivert handle created successfully")
+	
+	// Verify handle is actually valid by checking if it's open
+	// Note: We can't directly check the internal state, but we can verify it's not nil
+	if handle == nil {
+		return nil, fmt.Errorf("WinDivert handle is nil after creation - this should not happen")
+	}
+	
+	log.Printf("Handle validation: Handle object created and stored")
 
 	return &PacketEngine{
 		handle:   handle,
@@ -227,17 +256,33 @@ func (pe *PacketEngine) processPackets() {
 	for {
 		select {
 		case <-pe.stopChan:
+			log.Printf("Packet receive stopped due to stop signal")
 			return
 		default:
+			// Verify handle is still valid before receiving
+			if pe.handle == nil {
+				log.Printf("[ERROR] Handle is nil, cannot receive packets")
+				return
+			}
+			
 			// Receive packet
 			packet, err := pe.handle.Recv()
 			if err != nil {
 				// Check if it's a timeout or stop condition
 				select {
 				case <-pe.stopChan:
+					log.Printf("Packet receive stopped due to stop signal")
 					return
 				default:
-					log.Printf("Error receiving packet: %v", err)
+					errStr := err.Error()
+					// Check for invalid handle errors
+					if contains(errStr, "invalid handle") || contains(errStr, "handle is invalid") || contains(errStr, "handle isn't open") {
+						log.Printf("[ERROR] WinDivert handle became invalid: %v", err)
+						log.Printf("[ERROR] This usually means: 1) Handle was closed, 2) WinDivert driver issue, 3) Insufficient privileges")
+						log.Printf("[ERROR] Stopping packet interception due to invalid handle")
+						return
+					}
+					log.Printf("[ERROR] Error receiving packet: %v", err)
 					time.Sleep(10 * time.Millisecond) // Brief pause on error
 					continue
 				}
