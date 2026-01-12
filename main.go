@@ -179,6 +179,9 @@ func main() {
 		}
 	} else {
 		log.Println("Note: Could not detect local IP addresses for network access")
+		log.Println("The web interface is still accessible at http://localhost:18080")
+		log.Println("To find your IP address, run: ipconfig")
+		log.Println("Or access http://localhost:18080/api/network from the web interface")
 	}
 
 	log.Println("Note: This application requires Administrator privileges to intercept packets")
@@ -380,26 +383,65 @@ func updateStats(packets, bytes uint64) {
 // getLocalIPs returns a list of local IP addresses (excluding loopback)
 func getLocalIPs() []string {
 	var ips []string
+	
+	// Method 1: Try net.InterfaceAddrs() first
 	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return ips
+	if err == nil {
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+
+			ip := ipNet.IP
+			// Skip loopback and link-local addresses
+			if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+
+			// Only include IPv4 addresses
+			if ip.To4() != nil {
+				ips = append(ips, ip.String())
+			}
+		}
 	}
+	
+	// Method 2: If no IPs found, try net.Interfaces() for more detailed detection
+	if len(ips) == 0 {
+		interfaces, err := net.Interfaces()
+		if err == nil {
+			for _, iface := range interfaces {
+				// Skip loopback and down interfaces
+				if iface.Flags&net.FlagLoopback != 0 {
+					continue
+				}
+				if iface.Flags&net.FlagUp == 0 {
+					continue
+				}
 
-	for _, addr := range addrs {
-		ipNet, ok := addr.(*net.IPNet)
-		if !ok {
-			continue
-		}
+				addrs, err := iface.Addrs()
+				if err != nil {
+					continue
+				}
 
-		ip := ipNet.IP
-		// Skip loopback and link-local addresses
-		if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-			continue
-		}
+				for _, addr := range addrs {
+					ipNet, ok := addr.(*net.IPNet)
+					if !ok {
+						continue
+					}
 
-		// Only include IPv4 addresses
-		if ip.To4() != nil {
-			ips = append(ips, ip.String())
+					ip := ipNet.IP
+					// Skip loopback and link-local addresses
+					if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+						continue
+					}
+
+					// Only include IPv4 addresses
+					if ip.To4() != nil {
+						ips = append(ips, ip.String())
+					}
+				}
+			}
 		}
 	}
 

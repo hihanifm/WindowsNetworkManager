@@ -105,6 +105,9 @@ func (p *program) run() {
 		}
 	} else {
 		serviceLogger.Info("Note: Could not detect local IP addresses for network access")
+		serviceLogger.Info("The web interface is still accessible at http://localhost:18080")
+		serviceLogger.Info("To find your IP address, run: ipconfig")
+		serviceLogger.Info("Or access http://localhost:18080/api/network from the web interface")
 	}
 
 	serviceLogger.Info("Note: This application requires Administrator privileges to intercept packets")
