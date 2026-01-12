@@ -1008,4 +1008,4 @@ The web interface is always accessible at `http://localhost:18080` regardless of
 
 ---
 
-*Last updated: Version 2.6.0*
+*Last updated: Version 2.12.0*
