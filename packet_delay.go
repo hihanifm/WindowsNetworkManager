@@ -6,11 +6,17 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/deblasis/godivert"
 )
+
+// contains checks if a string contains a substring (case-insensitive)
+func contains(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
+}
 
 // PacketEngine handles packet interception and delay
 type PacketEngine struct {
@@ -76,14 +82,27 @@ func NewPacketEngine(delay time.Duration) (*PacketEngine, error) {
 	// "outbound" captures all outgoing packets
 	filter := "outbound"
 
+	log.Printf("Creating WinDivert handle with filter: %s", filter)
 	handle, err := godivert.NewWinDivertHandle(filter)
 	if err != nil {
 		// Provide more helpful error message
 		if err.Error() == "WinDivert DLL not loaded" {
 			return nil, fmt.Errorf("WinDivert DLL not loaded. Please ensure WinDivert.dll is in the same directory as WindowsNetworkManager.exe. Error: %v", err)
 		}
-		return nil, fmt.Errorf("failed to create WinDivert handle: %v. Make sure you are running as Administrator", err)
+		// Check for invalid handle errors
+		errStr := err.Error()
+		if contains(errStr, "invalid handle") || contains(errStr, "INVALID_HANDLE") {
+			return nil, fmt.Errorf("WinDivert handle is invalid. Common causes: 1) Not running as Administrator, 2) WinDivert driver not installed, 3) Another application using WinDivert, 4) Insufficient privileges. Original error: %v", err)
+		}
+		return nil, fmt.Errorf("failed to create WinDivert handle: %v. Make sure you are running as Administrator and WinDivert driver is properly installed", err)
 	}
+	
+	// Verify handle is valid
+	if handle == nil {
+		return nil, fmt.Errorf("WinDivert handle is nil after creation. This usually means insufficient privileges or WinDivert driver issue. Please run as Administrator")
+	}
+	
+	log.Printf("WinDivert handle created successfully")
 
 	return &PacketEngine{
 		handle:   handle,
