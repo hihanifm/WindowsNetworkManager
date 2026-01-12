@@ -127,7 +127,8 @@ func (p *program) run() {
 		}
 	}()
 
-	serviceLogger.Info("Note: This application requires Administrator privileges to intercept packets")
+	// Services typically run with admin privileges, so we don't need to check/warn
+	serviceLogger.Info("Service mode - running with service account privileges")
 	serviceLogger.Infof("Note: Windows Firewall may need to allow incoming connections on port %s", port)
 
 	httpServer = &http.Server{
