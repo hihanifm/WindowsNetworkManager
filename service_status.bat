@@ -133,6 +133,9 @@ if %errorLevel% neq 0 (
         echo ERROR: Could not extract executable path from BINARY_PATH_NAME
         echo Raw service query output:
         sc qc %SERVICE_NAME% 2>nul | findstr "BINARY_PATH_NAME"
+        echo.
+        echo Usage: service_status.bat [executable_path]
+        echo Example: service_status.bat "C:\Program Files\WindowsNetworkManager\WindowsNetworkManager.exe"
     )
 )
 echo.
