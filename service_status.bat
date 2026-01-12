@@ -149,7 +149,6 @@ if %errorLevel% neq 0 (
         echo Example: service_status.bat "C:\Program Files\WindowsNetworkManager\WindowsNetworkManager.exe"
     )
 )
-)
 echo.
 
 :: 5. Check if DLL exists
