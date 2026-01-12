@@ -72,6 +72,7 @@ jobs:
           cp start_service.bat dist/
           cp stop_service.bat dist/
           cp configure_firewall.bat dist/
+          cp install_windivert_driver.bat dist/ || echo "Note: install_windivert_driver.bat not found (optional)"
           echo "✓ All files copied to dist directory"
           ls -lh dist/
 
@@ -81,7 +82,7 @@ jobs:
           cd dist
           VERSION="${{ steps.version.outputs.version }}"
           ZIP_NAME="WindowsNetworkManager-v${VERSION}.zip"
-          zip -r "${ZIP_NAME}" WindowsNetworkManager.exe WinDivert.dll web/ install_service.bat uninstall_service.bat start_service.bat stop_service.bat configure_firewall.bat
+          zip -r "${ZIP_NAME}" WindowsNetworkManager.exe WinDivert.dll web/ install_service.bat uninstall_service.bat start_service.bat stop_service.bat configure_firewall.bat install_windivert_driver.bat service_status.bat view_logs.bat check_architecture.bat check_admin_privileges.bat run_manual.bat run_manual_port.bat 2>/dev/null || zip -r "${ZIP_NAME}" WindowsNetworkManager.exe WinDivert.dll web/ install_service.bat uninstall_service.bat start_service.bat stop_service.bat configure_firewall.bat service_status.bat view_logs.bat check_architecture.bat check_admin_privileges.bat run_manual.bat run_manual_port.bat
           ls -lh "${ZIP_NAME}"
           cd ..
           echo "ZIP created: dist/${ZIP_NAME}"

@@ -391,6 +391,90 @@ If you've created the rule but it still doesn't work:
 
 ---
 
+## WinDivert Driver Installation
+
+**Symptoms:**
+- "DLL is not loaded" error
+- "The handle is invalid" error during Recv
+- Handle creation succeeds but packet interception fails
+- Driver-related errors in Event Viewer
+
+### Quick Fix: Install Driver Script
+
+1. **Run the installation script:**
+   ```cmd
+   REM Right-click and "Run as Administrator"
+   install_windivert_driver.bat
+   ```
+
+2. **The script will:**
+   - Check if `WinDivert64.sys` (or `WinDivert32.sys`) exists in the executable directory
+   - Verify if the driver service is already installed
+   - Optionally install the driver manually if needed
+
+### Manual Driver Installation
+
+**Step 1: Locate Driver File**
+
+Ensure you have the WinDivert driver file:
+- Download from: https://www.reqrypt.org/windivert.html
+- Extract the archive
+- Copy `WinDivert64.sys` (for 64-bit Windows) or `WinDivert32.sys` (for 32-bit) to the same directory as `WindowsNetworkManager.exe`
+
+**Step 2: Install Driver (if auto-install fails)**
+
+```cmd
+REM Run Command Prompt as Administrator
+cd "C:\path\to\WindowsNetworkManager"
+
+REM Create driver service
+sc create WinDivert type= kernel binPath= "C:\path\to\WindowsNetworkManager\WinDivert64.sys"
+
+REM Start driver
+sc start WinDivert
+```
+
+**Step 3: Verify Installation**
+
+```cmd
+REM Check driver service status
+sc query WinDivert
+
+REM Check if driver file exists
+dir WinDivert*.sys
+```
+
+### Common Driver Issues
+
+1. **Driver File Not Found:**
+   - Ensure `WinDivert64.sys` is in the same directory as `WindowsNetworkManager.exe`
+   - Check file name matches exactly (case-sensitive on some systems)
+
+2. **Driver Blocked by Windows:**
+   - Right-click `WinDivert64.sys` → Properties → Unblock (if available)
+   - Windows may block unsigned drivers - you may need to disable driver signature enforcement temporarily
+
+3. **Driver Auto-Install Fails:**
+   - The driver should auto-install when `WinDivertOpen()` is called
+   - If it doesn't, try manual installation using `sc create` command
+   - Ensure you're running as Administrator
+
+4. **"Invalid Handle" After Driver Install:**
+   - Restart `WindowsNetworkManager.exe` after installing the driver
+   - Check Event Viewer for driver errors
+   - Verify the driver service is running: `sc query WinDivert`
+
+5. **Driver Signature Issues:**
+   - Windows may require signed drivers
+   - For testing, you can disable driver signature enforcement (not recommended for production)
+   - Or use a signed version of WinDivert if available
+
+### Driver File Locations
+
+The driver file should be in one of these locations:
+1. **Same directory as executable** (recommended): `C:\path\to\WindowsNetworkManager\WinDivert64.sys`
+2. **System32\drivers**: `C:\Windows\System32\drivers\WinDivert64.sys` (auto-installed location)
+
 ## WinDivert Errors
 
 ### "Failed to open WinDivert handle" or "DLL is not loaded"
@@ -462,8 +546,16 @@ If you've created the rule but it still doesn't work:
        - Note: The application will attempt to load the DLL from the executable directory regardless of architecture
 
 5. **WinDivert Driver Not Installed:**
-   - WinDivert may require driver installation on some systems
-   - Solution: Check WinDivert documentation for driver installation
+   - WinDivert requires both `WinDivert.dll` (user-mode) and `WinDivert64.sys` or `WinDivert32.sys` (kernel driver)
+   - The driver file must be in the same directory as `WindowsNetworkManager.exe`
+   - **Solution:** Use `install_windivert_driver.bat` script (run as Administrator) to check and install the driver
+   - **Manual Installation:**
+     ```cmd
+     REM Run as Administrator
+     sc create WinDivert type= kernel binPath= "C:\path\to\WinDivert64.sys"
+     sc start WinDivert
+     ```
+   - **Note:** The driver typically auto-installs when you run `WindowsNetworkManager.exe` as Administrator, but manual installation may be needed in some cases
 
 6. **Windows Version Incompatibility:**
    - Some Windows versions may not support WinDivert
