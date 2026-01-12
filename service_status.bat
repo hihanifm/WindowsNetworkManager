@@ -62,30 +62,60 @@ echo [4] Executable Check:
 echo ----------------------------------------
 set EXE_PATH=
 set EXE_DIR=
-for /f "tokens=2* delims==" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "BINARY_PATH_NAME"') do (
-    :: Get the full path - handle quotes and spaces
-    set "RAW_PATH=%%a"
-    if "%%b" neq "" set "RAW_PATH=!RAW_PATH! %%b"
-    :: Remove quotes
-    set "EXE_PATH=!RAW_PATH:"=!"
-    :: Trim leading/trailing spaces
-    for /f "tokens=* delims= " %%p in ("!EXE_PATH!") do set "EXE_PATH=%%p"
-    echo Service executable path: !EXE_PATH!
-    :: Extract directory from path
-    for %%f in ("!EXE_PATH!") do set "EXE_DIR=%%~dpf"
-    :: Remove trailing backslash
-    if "!EXE_DIR:~-1!"=="\" set "EXE_DIR=!EXE_DIR:~0,-1!"
-    if exist "!EXE_PATH!" (
-        echo Executable exists: YES
-        for %%b in ("!EXE_PATH!") do (
-            echo File size: %%~zb bytes
-            echo Modified: %%~tb
+echo Debug: Querying service configuration...
+sc qc %SERVICE_NAME% 2>nul | findstr "BINARY_PATH_NAME" >nul
+if %errorLevel% neq 0 (
+    echo ERROR: Could not find BINARY_PATH_NAME in service configuration
+    echo Service may not be installed
+    echo.
+    echo Full service configuration:
+    sc qc %SERVICE_NAME% 2>nul
+) else (
+    echo Debug: BINARY_PATH_NAME found, parsing...
+    for /f "tokens=*" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "BINARY_PATH_NAME"') do (
+        echo Raw line: [%%a]
+        :: Try different parsing methods
+        for /f "tokens=2 delims=:" %%b in ("%%a") do (
+            set "EXE_PATH=%%b"
+            set "EXE_PATH=!EXE_PATH: =!"
+            echo Parsed path (method 1): [!EXE_PATH!]
+        )
+        :: Alternative: tokens=2 delims==
+        for /f "tokens=2 delims==" %%c in ("%%a") do (
+            if "!EXE_PATH!"=="" (
+                set "EXE_PATH=%%c"
+                set "EXE_PATH=!EXE_PATH: =!"
+                echo Parsed path (method 2): [!EXE_PATH!]
+            )
+        )
+        :: Remove quotes if present
+        set "EXE_PATH=!EXE_PATH:"=!"
+        echo Final path: [!EXE_PATH!]
+    )
+    if defined EXE_PATH (
+        echo Service executable path: !EXE_PATH!
+        :: Extract directory from path
+        for %%f in ("!EXE_PATH!") do (
+            set "EXE_DIR=%%~dpf"
+            :: Remove trailing backslash
+            if "!EXE_DIR:~-1!"=="\" set "EXE_DIR=!EXE_DIR:~0,-1!"
+        )
+        echo Extracted directory: [!EXE_DIR!]
+        if exist "!EXE_PATH!" (
+            echo Executable exists: YES
+            for %%b in ("!EXE_PATH!") do (
+                echo File size: %%~zb bytes
+                echo Modified: %%~tb
+            )
+        ) else (
+            echo Executable exists: NO - ERROR!
+            echo Checking path: !EXE_PATH!
         )
     ) else (
-        echo Executable exists: NO - ERROR!
-        echo Checking path: !EXE_PATH!
+        echo ERROR: Could not extract executable path from BINARY_PATH_NAME
+        echo Raw service query output:
+        sc qc %SERVICE_NAME% 2>nul | findstr "BINARY_PATH_NAME"
     )
-    echo Extracted directory: !EXE_DIR!
 )
 echo.
 
