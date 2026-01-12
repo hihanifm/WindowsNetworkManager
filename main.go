@@ -9,12 +9,25 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/kardianos/service"
 	"WindowsNetworkManager/version"
 )
+
+// isRunningAsAdmin checks if the current process is running with administrator privileges
+func isRunningAsAdmin() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	
+	// Try to open a handle that requires admin privileges
+	// This is a simple check that works on Windows
+	_, err := os.Open("\\\\.\\PHYSICALDRIVE0")
+	return err == nil
+}
 
 var (
 	currentDelay time.Duration
@@ -184,9 +197,16 @@ func main() {
 		log.Println("Or access http://localhost:18080/api/network from the web interface")
 	}
 
-	log.Println("Note: This application requires Administrator privileges to intercept packets")
-	log.Println("Note: Windows Firewall may need to allow incoming connections on port", *port)
-	log.Println("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
+	// Only show admin privilege note if not running as admin
+	if !isRunningAsAdmin() {
+		appLogger.Info("WARNING: Not running as Administrator - packet interception may not work")
+		appLogger.Info("Please run as Administrator for full functionality")
+	} else {
+		appLogger.Debug("Running with Administrator privileges")
+	}
+	
+	appLogger.Info("Note: Windows Firewall may need to allow incoming connections on port %s", *port)
+	appLogger.Info("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
 
 	if err := http.ListenAndServe(bindAddr, nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
