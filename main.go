@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -64,7 +65,18 @@ func main() {
 	// Command line flags
 	port := flag.String("port", "18080", "Web server port (ignored in service mode)")
 	svcFlag := flag.String("service", "", "Service command: install, uninstall, start, stop, restart")
+	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+	
+	// Handle version flag
+	if *versionFlag {
+		fmt.Printf("Windows Network Manager version %s\n", version.Version)
+		fmt.Printf("Compiled version (baked into binary): %s\n", version.Version)
+		if buildInfo, ok := debug.ReadBuildInfo(); ok {
+			fmt.Printf("Go version: %s\n", buildInfo.GoVersion)
+		}
+		os.Exit(0)
+	}
 
 	// Get executable path for service configuration
 	exePath, err := os.Executable()
@@ -599,5 +611,34 @@ func handleUpgradeStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Expires", "0")
 
 	status := GetUpgradeStatus()
+	
+	// Add verification info about the actual compiled version
+	status.CompiledVersion = getCompiledVersion()
+	
 	json.NewEncoder(w).Encode(status)
+}
+
+// getCompiledVersion returns the version that was compiled into this binary
+// This helps verify that the running binary has the correct version
+func getCompiledVersion() string {
+	// The version.Version constant is compiled into the binary at build time
+	// This will always return the version that was set when the binary was built
+	compiledVer := version.Version
+	
+	// Try to get additional build info from runtime/debug
+	if buildInfo, ok := debug.ReadBuildInfo(); ok {
+		// Log build info for debugging
+		log.Printf("[VERSION] Build info - Go version: %s, Path: %s", buildInfo.GoVersion, buildInfo.Path)
+		// Check if there are any build settings that might indicate version
+		for _, setting := range buildInfo.Settings {
+			if setting.Key == "vcs.revision" || setting.Key == "vcs.time" {
+				log.Printf("[VERSION] Build setting: %s = %s", setting.Key, setting.Value)
+			}
+		}
+	}
+	
+	// Log the compiled version for verification
+	log.Printf("[VERSION] Compiled version in binary: %s", compiledVer)
+	
+	return compiledVer
 }

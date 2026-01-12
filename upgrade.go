@@ -34,6 +34,7 @@ type UpgradeStatus struct {
 	Status          string    `json:"status"` // "idle", "checking", "downloading", "installing", "completed", "error"
 	Progress        string    `json:"progress"`
 	CurrentVersion  string    `json:"current_version"`
+	CompiledVersion string    `json:"compiled_version,omitempty"` // Version baked into the binary
 	LatestVersion   string    `json:"latest_version,omitempty"`
 	UpdateAvailable bool      `json:"update_available,omitempty"`
 	DownloadURL     string    `json:"download_url,omitempty"`
@@ -74,9 +75,14 @@ func initUpgradeManager() error {
 		zipPath:    filepath.Join(exeDir, "upgrade.zip"),
 	}
 
+	// Note: version.Version is a compile-time constant. If the binary was compiled
+	// with an old version, it will always show that version until rebuilt.
+	currentVer := version.Version
+	log.Printf("[UPGRADE] Initializing upgrade manager with version: %s", currentVer)
+
 	upgradeStatus = &UpgradeStatus{
 		Status:         "idle",
-		CurrentVersion: version.Version, // Always use current version from package
+		CurrentVersion: currentVer, // Always use current version from package
 	}
 
 	return nil
@@ -518,7 +524,18 @@ func GetUpgradeStatus() *UpgradeStatus {
 	defer upgradeMutex.RUnlock()
 
 	// Always return current version from version package (not cached)
+	// IMPORTANT: version.Version is a compile-time constant. If the binary was
+	// compiled with an old version (e.g., 2.6.0), it will always return that version
+	// until the binary is rebuilt with the new version.
 	status := *upgradeStatus
-	status.CurrentVersion = version.Version
+	currentVer := version.Version
+	status.CurrentVersion = currentVer
+	status.CompiledVersion = currentVer // This is the version baked into the binary at compile time
+
+	// Log if there's a mismatch (for debugging)
+	if upgradeStatus.CurrentVersion != currentVer && upgradeStatus.CurrentVersion != "" {
+		log.Printf("[UPGRADE] Version mismatch detected: cached=%s, actual=%s", upgradeStatus.CurrentVersion, currentVer)
+	}
+
 	return &status
 }

@@ -222,6 +222,15 @@ async function loadUpgradeInfo() {
             document.getElementById('currentVersion').textContent = status.current_version;
         }
         
+        // Log compiled version for debugging (check browser console)
+        if (status.compiled_version) {
+            console.log('Compiled version (baked into binary):', status.compiled_version);
+            // If there's a mismatch, warn the user
+            if (status.current_version !== status.compiled_version) {
+                console.warn('Version mismatch! Current:', status.current_version, 'Compiled:', status.compiled_version);
+            }
+        }
+        
         // If upgrade is in progress, start polling
         if (status.status && status.status !== 'idle' && status.status !== 'completed' && status.status !== 'error') {
             startUpgradeStatusPolling();
