@@ -49,26 +49,39 @@ jobs:
           ls -lh WindowsNetworkManager.exe
           file WindowsNetworkManager.exe || true
 
-      - name: Copy WinDivert DLL from vendor
+      - name: Create dist directory
         run: |
-          echo "Using WinDivert.dll from vendor directory..."
+          mkdir -p dist
+          echo "Created dist directory"
+
+      - name: Copy files to dist
+        run: |
+          echo "Copying files to dist directory..."
+          cp WindowsNetworkManager.exe dist/
           if [ -f "vendor/windivert/WinDivert.dll" ]; then
-            cp vendor/windivert/WinDivert.dll ./WinDivert.dll
-            ls -lh WinDivert.dll
+            cp vendor/windivert/WinDivert.dll dist/
             echo "✓ WinDivert.dll copied from vendor directory"
           else
             echo "ERROR: WinDivert.dll not found in vendor/windivert/"
             echo "Please ensure WinDivert.dll is committed in vendor/windivert/"
             exit 1
           fi
+          cp -r web dist/
+          cp install_service.bat dist/
+          cp uninstall_service.bat dist/
+          cp configure_firewall.bat dist/
+          echo "✓ All files copied to dist directory"
+          ls -lh dist/
 
       - name: Create release bundle
         if: steps.version.outputs.is_tag == 'true'
         run: |
+          cd dist
           VERSION="${{ steps.version.outputs.version }}"
           ZIP_NAME="WindowsNetworkManager-v${VERSION}.zip"
           zip -r "${ZIP_NAME}" WindowsNetworkManager.exe WinDivert.dll web/ install_service.bat uninstall_service.bat configure_firewall.bat
           ls -lh "${ZIP_NAME}"
+          echo "ZIP_PATH=dist/${ZIP_NAME}" >> $GITHUB_ENV
 
       - name: Upload build artifacts (manual dispatch only)
         if: steps.version.outputs.is_tag != 'true'
@@ -107,9 +120,9 @@ jobs:
             ### Quick Install
             See [GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/) for quick installation instructions.
           files: |
-            WindowsNetworkManager.exe
-            WinDivert.dll
-            WindowsNetworkManager-v${{ steps.version.outputs.version }}.zip
+            dist/WindowsNetworkManager.exe
+            dist/WinDivert.dll
+            ${{ env.ZIP_PATH }}
           draft: false
           prerelease: false
         env:
