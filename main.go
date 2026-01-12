@@ -1,3 +1,5 @@
+// +build windows
+
 package main
 
 import (
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kardianos/service"
+	"golang.org/x/sys/windows"
 	"WindowsNetworkManager/version"
 )
 
@@ -23,10 +26,15 @@ func isRunningAsAdmin() bool {
 		return false
 	}
 	
-	// Try to open a handle that requires admin privileges
-	// This is a simple check that works on Windows
-	_, err := os.Open("\\\\.\\PHYSICALDRIVE0")
-	return err == nil
+	// Use Windows API to check if process token is elevated
+	token, err := windows.OpenCurrentProcessToken()
+	if err != nil {
+		// If we can't open the token, assume not admin
+		return false
+	}
+	defer token.Close()
+	
+	return token.IsElevated()
 }
 
 var (
