@@ -4,6 +4,7 @@ This guide helps you resolve common issues when using Windows Network Manager.
 
 ## Table of Contents
 
+- [404 Errors (Page Not Found)](#404-errors-page-not-found)
 - [Firewall and Network Access Issues](#firewall-and-network-access-issues)
 - [Application Won't Start](#application-wont-start)
 - [WinDivert Errors](#windivert-errors)
@@ -12,6 +13,242 @@ This guide helps you resolve common issues when using Windows Network Manager.
 - [Remote Upgrade Issues](#remote-upgrade-issues)
 - [Port Conflicts](#port-conflicts)
 - [General Tips](#general-tips)
+
+---
+
+## 404 Errors (Page Not Found)
+
+**Symptoms:**
+- Getting "404 Not Found" or "404 page not found" errors
+- Web interface doesn't load
+- API endpoints return 404
+- Browser shows "This site can't be reached" or "404" error
+
+### Step 1: Verify Application is Running
+
+**Check if the service is running:**
+```cmd
+sc query WindowsNetworkManager
+```
+Look for `STATE: 4 RUNNING`. If it shows `STOPPED`, start it:
+```cmd
+net start WindowsNetworkManager
+```
+
+**Check if running manually:**
+```cmd
+tasklist | findstr WindowsNetworkManager
+```
+If no process found, the application is not running.
+
+**Check if port is listening:**
+```cmd
+netstat -ano | findstr :18080
+```
+Should show `LISTENING` status. If nothing appears, the server is not running.
+
+### Step 2: Verify Correct URL
+
+**Valid URLs:**
+- Main page: `http://localhost:18080/` or `http://localhost:18080`
+- API endpoints:
+  - `http://localhost:18080/api/config`
+  - `http://localhost:18080/api/stats`
+  - `http://localhost:18080/api/network`
+  - `http://localhost:18080/api/discover`
+  - `http://localhost:18080/api/upgrade/check`
+
+**Common mistakes:**
+- ❌ `http://localhost:18080/index.html` (should be just `/`)
+- ❌ `http://localhost:18080/web/index.html` (wrong path)
+- ❌ `http://localhost:18080/api` (missing endpoint name)
+- ❌ `https://localhost:18080` (should be `http://`, not `https://`)
+- ❌ `http://localhost:8080` (wrong port, should be 18080)
+
+### Step 3: Check Port Number
+
+**Verify the port:**
+```cmd
+netstat -ano | findstr :18080
+```
+If nothing appears, check if a different port is being used:
+```cmd
+netstat -ano | findstr LISTENING
+```
+Look for the WindowsNetworkManager process.
+
+**Check service configuration:**
+- Service always uses port 18080 (hardcoded)
+- Manual run can use different port: `WindowsNetworkManager.exe -port 8080`
+- If you changed the port, use the correct port in the URL
+
+### Step 4: Check Web Files Location
+
+**If running as service:**
+The service looks for `web/index.html` relative to the executable directory.
+
+1. **Find executable location:**
+   ```cmd
+   sc qc WindowsNetworkManager
+   ```
+   Look for `BINARY_PATH_NAME` - this is where the EXE is located.
+
+2. **Verify web files exist:**
+   - Navigate to the executable directory
+   - Check that `web/index.html` exists
+   - Check that `web/static/app.js` exists
+
+3. **If files are missing:**
+   - Re-download the release package
+   - Extract all files to the same directory
+   - Ensure `web/` folder is present
+
+**If running manually:**
+1. Run from the directory containing the `web/` folder:
+   ```cmd
+   cd C:\path\to\WindowsNetworkManager
+   WindowsNetworkManager.exe
+   ```
+
+2. Or ensure the executable and `web/` folder are in the same directory.
+
+### Step 5: Check Application Logs
+
+**If running as service:**
+```cmd
+# Check Event Viewer
+eventvwr.msc
+```
+Navigate to: Windows Logs → Application
+Look for entries from "Windows Network Manager" or "WindowsNetworkManager"
+Check for errors about file paths or web server startup.
+
+**If running manually:**
+- Check the console window for error messages
+- Look for messages like:
+  - "Failed to change directory"
+  - "Failed to start web server"
+  - "File not found"
+
+### Step 6: Test Basic Connectivity
+
+**Test if server is responding:**
+```cmd
+curl http://localhost:18080/api/network
+```
+Or use PowerShell:
+```powershell
+Invoke-WebRequest -Uri http://localhost:18080/api/network
+```
+
+**Expected response:**
+```json
+{"local_ips":["192.168.1.100"],"port":"18080"}
+```
+
+**If this works but the web page doesn't:**
+- The server is running, but web files might be missing
+- Check Step 4 above
+
+**If this fails:**
+- Server is not running or not accessible
+- Check Steps 1-3 above
+
+### Step 7: Restart the Application
+
+**If running as service:**
+```cmd
+net stop WindowsNetworkManager
+net start WindowsNetworkManager
+```
+
+**If running manually:**
+1. Close the console window
+2. Restart as Administrator:
+   ```cmd
+   WindowsNetworkManager.exe
+   ```
+
+### Step 8: Check for Path Issues
+
+**Common path-related 404 causes:**
+
+1. **Spaces in path:**
+   - If installed in a path with spaces (e.g., `C:\Program Files\...`)
+   - Service might have issues finding web files
+   - Try installing to a path without spaces
+
+2. **Working directory:**
+   - Application changes to executable directory on startup
+   - If this fails, web files won't be found
+   - Check logs for "Failed to change directory" warnings
+
+3. **File permissions:**
+   - Ensure web files are readable
+   - Check folder permissions on `web/` directory
+
+### Step 9: Verify from Network IP
+
+**If accessing from another device:**
+1. **Get the correct IP:**
+   ```cmd
+   ipconfig
+   ```
+   Look for IPv4 Address (e.g., `192.168.1.100`)
+
+2. **Use correct URL:**
+   - `http://192.168.1.100:18080` (replace with your IP)
+   - Not `http://localhost:18080` (localhost only works on the host PC)
+
+3. **Check firewall:**
+   - See [Firewall and Network Access Issues](#firewall-and-network-access-issues) section
+
+### Step 10: Complete Reset
+
+If nothing works, try a complete reset:
+
+1. **Stop and uninstall service:**
+   ```cmd
+   net stop WindowsNetworkManager
+   WindowsNetworkManager.exe -service uninstall
+   ```
+
+2. **Delete old installation:**
+   - Remove the entire directory
+
+3. **Fresh installation:**
+   - Download latest release
+   - Extract to a new directory (preferably without spaces in path)
+   - Run `install_service.bat` as Administrator
+   - Start service: `net start WindowsNetworkManager`
+
+4. **Test:**
+   - Open `http://localhost:18080`
+   - Should load the web interface
+
+### Quick Diagnostic Checklist
+
+Run these commands in order:
+
+```cmd
+# 1. Check service status
+sc query WindowsNetworkManager
+
+# 2. Check if port is listening
+netstat -ano | findstr :18080
+
+# 3. Test API endpoint
+curl http://localhost:18080/api/network
+
+# 4. Check Event Viewer for errors
+eventvwr.msc
+```
+
+**If all pass but still getting 404:**
+- Check web files exist in executable directory
+- Verify URL is correct (no typos, correct port)
+- Try accessing from different browser
+- Clear browser cache
 
 ---
 
