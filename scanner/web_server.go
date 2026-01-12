@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,6 +23,7 @@ var (
 type ScanResult struct {
 	Status      string    `json:"status"` // "idle", "scanning", "completed"
 	Progress    string    `json:"progress"`
+	NetworkInfo string    `json:"network_info,omitempty"` // Current network being scanned
 	Instances   []InstanceInfo `json:"instances"`
 	Error       string    `json:"error,omitempty"`
 	CompletedAt time.Time `json:"completed_at,omitempty"`
@@ -154,6 +156,10 @@ func runScan(workers int, timeout time.Duration) {
 		scanMutex.Lock()
 		if currentScan != nil && currentScan.Status == "scanning" {
 			currentScan.Progress = message
+			// Extract network info from message (format: "Network X/Y: CIDR | ...")
+			if networkMatch := extractNetworkInfo(message); networkMatch != "" {
+				currentScan.NetworkInfo = networkMatch
+			}
 		}
 		scanMutex.Unlock()
 	}
@@ -269,4 +275,28 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(response)
+}
+
+// extractNetworkInfo extracts network CIDR from progress message
+func extractNetworkInfo(message string) string {
+	// Look for patterns like "Network X/Y: CIDR |" or "Scanning network X/Y: CIDR"
+	// Try to extract the CIDR part
+	if idx := strings.Index(message, ":"); idx != -1 {
+		afterColon := message[idx+1:]
+		if idx2 := strings.Index(afterColon, "|"); idx2 != -1 {
+			networkPart := strings.TrimSpace(afterColon[:idx2])
+			// Check if it looks like a CIDR (contains /)
+			if strings.Contains(networkPart, "/") {
+				return networkPart
+			}
+		}
+		// Try to find CIDR pattern directly
+		parts := strings.Fields(afterColon)
+		for _, part := range parts {
+			if strings.Contains(part, "/") {
+				return part
+			}
+		}
+	}
+	return ""
 }

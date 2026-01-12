@@ -17,29 +17,89 @@ func ScanNetwork(workers int, timeout time.Duration) ([]InstanceInfo, error) {
 
 // ScanNetworkWithProgress scans the local network with progress reporting
 func ScanNetworkWithProgress(workers int, timeout time.Duration, progressCallback ProgressCallback) ([]InstanceInfo, error) {
-	subnet, err := getLocalSubnet()
+	subnets, err := getAllLocalSubnets()
 	if err != nil {
-		return nil, fmt.Errorf("failed to detect local subnet: %v", err)
+		return nil, fmt.Errorf("failed to detect local subnets: %v", err)
 	}
 
-	ipRange, err := parseSubnet(subnet)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse subnet: %v", err)
+	if len(subnets) == 0 {
+		return nil, fmt.Errorf("no network interfaces found")
+	}
+
+	var allInstances []InstanceInfo
+	totalIPs := 0
+	scannedIPs := 0
+	foundCount := 0
+
+	// Scan each subnet
+	for i, subnet := range subnets {
+		ipRange, err := parseSubnet(subnet.CIDR)
+		if err != nil {
+			if progressCallback != nil {
+				progressCallback(scannedIPs, totalIPs, foundCount, 
+					fmt.Sprintf("Skipping network %s: %v", subnet.CIDR, err))
+			}
+			continue
+		}
+
+		totalIPs += len(ipRange)
+		
+		if progressCallback != nil {
+			networkInfo := fmt.Sprintf("Scanning network %d/%d: %s (range: %s - %s, %d IPs)", 
+				i+1, len(subnets), subnet.CIDR, subnet.FirstIP, subnet.LastIP, len(ipRange))
+			progressCallback(scannedIPs, totalIPs, foundCount, networkInfo)
+		}
+
+		// Create progress callback for this subnet
+		subnetProgressCallback := func(scanned, total, found int, message string) {
+			currentScanned := scannedIPs + scanned
+			currentFound := foundCount + found
+			networkInfo := fmt.Sprintf("Network %d/%d: %s | %s", 
+				i+1, len(subnets), subnet.CIDR, message)
+			if progressCallback != nil {
+				progressCallback(currentScanned, totalIPs, currentFound, networkInfo)
+			}
+		}
+
+		instances, err := scanIPRange(ipRange, DefaultPort, workers, timeout, subnetProgressCallback)
+		if err != nil {
+			if progressCallback != nil {
+				progressCallback(scannedIPs+len(ipRange), totalIPs, foundCount,
+					fmt.Sprintf("Error scanning %s: %v", subnet.CIDR, err))
+			}
+			continue
+		}
+
+		scannedIPs += len(ipRange)
+		foundCount += len(instances)
+		allInstances = append(allInstances, instances...)
 	}
 
 	if progressCallback != nil {
-		progressCallback(0, len(ipRange), 0, fmt.Sprintf("Detected network subnet: %s", subnet))
+		progressCallback(totalIPs, totalIPs, foundCount,
+			fmt.Sprintf("Scan complete! Scanned %d network(s), found %d instance(s)", 
+				len(subnets), len(allInstances)))
 	}
 
-	return scanIPRange(ipRange, DefaultPort, workers, timeout, progressCallback)
+	return allInstances, nil
 }
 
-// getLocalSubnet detects the local network subnet
-func getLocalSubnet() (string, error) {
+// NetworkSubnet represents a network subnet with metadata
+type NetworkSubnet struct {
+	CIDR    string // e.g., "192.168.1.0/24"
+	FirstIP string // First IP in range
+	LastIP  string // Last IP in range
+	Interface string // Network interface name
+}
+
+// getAllLocalSubnets detects all local network subnets
+func getAllLocalSubnets() ([]NetworkSubnet, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+
+	var subnets []NetworkSubnet
 
 	for _, iface := range interfaces {
 		// Skip loopback and down interfaces
@@ -74,15 +134,56 @@ func getLocalSubnet() (string, error) {
 
 			// Calculate subnet
 			mask := ipNet.Mask
-			ones, _ := mask.Size()
+			ones, bits := mask.Size()
 			if ones > 0 && ones <= 24 {
-				// Return subnet in CIDR notation
-				return fmt.Sprintf("%s/%d", ipNet.IP.Mask(mask).String(), ones), nil
+				networkIP := ipNet.IP.Mask(mask)
+				cidr := fmt.Sprintf("%s/%d", networkIP.String(), ones)
+				
+				// Calculate first and last IP
+				hostBits := bits - ones
+				if hostBits > 8 {
+					hostBits = 8 // Limit to /24
+				}
+				
+				firstIP := make(net.IP, len(networkIP))
+				copy(firstIP, networkIP)
+				firstIP[3] = 1 // First usable IP
+				
+				lastIP := make(net.IP, len(networkIP))
+				copy(lastIP, networkIP)
+				maxHosts := (1 << hostBits) - 2 // Exclude .0 and .255
+				if maxHosts > 254 {
+					maxHosts = 254
+				}
+				lastIP[3] = byte(maxHosts) // Last usable IP
+				
+				subnets = append(subnets, NetworkSubnet{
+					CIDR:      cidr,
+					FirstIP:   firstIP.String(),
+					LastIP:    lastIP.String(),
+					Interface: iface.Name,
+				})
 			}
 		}
 	}
 
-	return "", fmt.Errorf("no suitable network interface found")
+	if len(subnets) == 0 {
+		return nil, fmt.Errorf("no suitable network interface found")
+	}
+
+	return subnets, nil
+}
+
+// getLocalSubnet detects the first local network subnet (for backward compatibility)
+func getLocalSubnet() (string, error) {
+	subnets, err := getAllLocalSubnets()
+	if err != nil {
+		return "", err
+	}
+	if len(subnets) == 0 {
+		return "", fmt.Errorf("no network interfaces found")
+	}
+	return subnets[0].CIDR, nil
 }
 
 // parseSubnet parses a CIDR subnet and returns the IP range

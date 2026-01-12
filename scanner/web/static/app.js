@@ -110,9 +110,14 @@ async function checkScanStatus() {
                     </div>
                 `;
                 
+                // Extract network info if available
+                const networkInfo = data.scan.network_info ? 
+                    `<div style="margin-top: 8px; font-size: 14px; color: #059669; font-weight: 600;">Network: ${data.scan.network_info}</div>` : '';
+                
                 status.innerHTML = `
                     <strong>Scanning...</strong>
                     <div class="progress">${progressText}</div>
+                    ${networkInfo}
                     ${progressBar}
                 `;
             } else if (data.scan.status === 'completed') {
