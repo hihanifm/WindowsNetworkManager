@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kardianos/service"
+	"WindowsNetworkManager/version"
 )
 
 var (
