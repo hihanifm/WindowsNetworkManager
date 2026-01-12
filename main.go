@@ -151,6 +151,10 @@ func main() {
 	}
 
 	// Running in console mode (not as service)
+	log.Printf("========================================")
+	log.Printf("Windows Network Manager v%s", version.Version)
+	log.Printf("========================================")
+	
 	// Get executable directory for web files
 	if err := os.Chdir(exeDir); err != nil {
 		log.Printf("Warning: Failed to change directory: %v", err)

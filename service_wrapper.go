@@ -22,7 +22,7 @@ type program struct {
 }
 
 func (p *program) Start(s service.Service) error {
-	serviceLogger.Info("Windows Network Manager service starting...")
+	serviceLogger.Infof("Windows Network Manager v%s service starting...", version.Version)
 	p.exit = make(chan struct{})
 
 	// Start the application in a goroutine
@@ -94,6 +94,7 @@ func (p *program) run() {
 
 	port := "18080"
 	bindAddr := "0.0.0.0:" + port
+	serviceLogger.Infof("Windows Network Manager v%s", version.Version)
 	serviceLogger.Infof("Starting web server on http://localhost:%s", port)
 
 	// Get and display local IP addresses for network access (with retry)
