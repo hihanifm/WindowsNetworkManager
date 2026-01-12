@@ -865,4 +865,55 @@ eventvwr.msc  # Event Viewer
 
 ---
 
+## "Could not detect local IP addresses for network access" Error
+
+**Symptoms:**
+- Error message appears in Event Viewer logs
+- Service starts successfully but IP detection fails
+- Web interface works on localhost but IP not shown
+
+**This is NOT a critical error:**
+- The web interface still works at `http://localhost:18080`
+- Network access still works - you just need to find your IP manually
+- The service is running correctly
+
+**Solutions:**
+
+1. **Find your IP address manually:**
+   ```cmd
+   ipconfig
+   ```
+   Look for "IPv4 Address" under your active network adapter
+
+2. **Use the web interface API:**
+   - Open `http://localhost:18080/api/network`
+   - This will return your IP addresses in JSON format
+   - Even if detection fails at startup, the API may work
+
+3. **Check network interfaces:**
+   ```cmd
+   ipconfig /all
+   ```
+   Verify you have active network adapters
+
+4. **Restart network adapter:**
+   - Open Network Connections
+   - Disable and re-enable your network adapter
+   - Restart the service
+
+5. **Check if running as service:**
+   - When running as a service, network detection may be delayed
+   - Wait a few seconds after service start
+   - Check Event Viewer again after network is fully initialized
+
+**Why this happens:**
+- Network interfaces may not be fully initialized when service starts
+- Some network adapters may be filtered out (virtual adapters, etc.)
+- Service context may have limited network access during startup
+
+**Workaround:**
+The web interface is always accessible at `http://localhost:18080` regardless of IP detection. To access from other devices, manually find your IP using `ipconfig` and use that address.
+
+---
+
 *Last updated: Version 2.6.0*
