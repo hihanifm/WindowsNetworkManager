@@ -1,3 +1,26 @@
+[DEBUG] Checking if WinDivert driver service exists...
+[DEBUG] Service check result: 0
+[INFO] WinDivert driver service already exists
+
+Checking driver status...
+
+SERVICE_NAME: WinDivert
+        TYPE               : 1  KERNEL_DRIVER
+        STATE              : 1  STOPPED
+        WIN32_EXIT_CODE    : 2  (0x2)
+        SERVICE_EXIT_CODE  : 0  (0x0)
+        CHECKPOINT         : 0x0
+        WAIT_HINT          : 0x0
+
+The driver should auto-load when WindowsNetworkManager.exe starts.
+If you are experiencing issues, try:
+  1. Restart WindowsNetworkManager.exe as Administrator
+  2. Check Event Viewer for driver errors
+  3. Verify the driver file is unblocked by Windows
+
+Press any key to continue . . .
+
+
 2026/01/12 12:43:11 Initializing packet engine with delay: 0s
 2026/01/12 12:43:11 DLL not loaded, initializing...
 2026/01/12 12:43:11 WinDivert DLL loaded successfully from: C:\Users\hihan\Downloads\wnm\WindowsNetworkManager-v2.10.0\WinDivert.dll (architecture: amd64)
