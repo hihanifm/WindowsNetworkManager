@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Installing Windows Network Manager Service
+echo Stopping Windows Network Manager Service
 echo ========================================
 echo.
 
@@ -13,34 +13,39 @@ if %errorLevel% neq 0 (
     exit /b 1
 )
 
-echo Installing service...
-WindowsNetworkManager.exe -service install
+echo Stopping service...
+net stop WindowsNetworkManager
 
 if %ERRORLEVEL% EQU 0 (
     echo.
     echo ========================================
-    echo Service installed successfully!
+    echo Service stopped successfully!
     echo ========================================
     echo.
-    echo The service is now installed and will start automatically on boot.
+    echo The service has been stopped.
     echo.
-    echo To start the service now, run:
+    echo To start the service again, run:
     echo   start_service.bat
     echo.
     echo Or use:
     echo   net start WindowsNetworkManager
     echo.
-    echo Web interface will be available at:
-    echo   http://localhost:18080
-    echo.
 ) else (
     echo.
     echo ========================================
-    echo Service installation failed!
+    echo Service stop failed!
     echo ========================================
+    echo.
+    echo Possible reasons:
+    echo - Service is not installed
+    echo - Service is already stopped
+    echo - Service encountered an error
+    echo.
+    echo To check service status, run:
+    echo   sc query WindowsNetworkManager
+    echo.
     pause
     exit /b 1
 )
 
 pause
-
