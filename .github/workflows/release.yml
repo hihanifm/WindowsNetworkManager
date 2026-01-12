@@ -65,7 +65,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ZIP_NAME="WindowsNetworkManager-v${VERSION}.zip"
-          zip -r "${ZIP_NAME}" WindowsNetworkManager.exe WinDivert.dll web/
+          zip -r "${ZIP_NAME}" WindowsNetworkManager.exe WinDivert.dll web/ install_service.bat uninstall_service.bat configure_firewall.bat
           ls -lh "${ZIP_NAME}"
 
       - name: Upload build artifacts (manual dispatch only)
@@ -90,12 +90,17 @@ jobs:
             ### Installation
             1. Download `WindowsNetworkManager-v${{ steps.version.outputs.version }}.zip`
             2. Extract the ZIP file
-            3. Run `WindowsNetworkManager.exe` as Administrator
+            3. Right-click `install_service.bat` → Run as Administrator
+            4. The service will install and start automatically
+            5. Access web interface at http://localhost:18080
             
             ### Files Included
             - `WindowsNetworkManager.exe` - Main application
             - `WinDivert.dll` - Required library (WinDivert 2.2.0)
             - `web/` - Web interface files (index.html, static/app.js)
+            - `install_service.bat` - Install and start as Windows service (run as Administrator)
+            - `uninstall_service.bat` - Uninstall Windows service (run as Administrator)
+            - `configure_firewall.bat` - Configure Windows Firewall (run as Administrator)
             
             ### Quick Install
             See [GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/) for quick installation instructions.

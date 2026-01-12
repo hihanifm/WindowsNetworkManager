@@ -59,10 +59,26 @@ else
 fi
 echo ""
 
+# Copy batch files
+echo "Copying batch files..."
+if [ -f "install_service.bat" ]; then
+    cp install_service.bat "$RELEASE_DIR/"
+    echo "✓ Copied install_service.bat"
+fi
+if [ -f "uninstall_service.bat" ]; then
+    cp uninstall_service.bat "$RELEASE_DIR/"
+    echo "✓ Copied uninstall_service.bat"
+fi
+if [ -f "configure_firewall.bat" ]; then
+    cp configure_firewall.bat "$RELEASE_DIR/"
+    echo "✓ Copied configure_firewall.bat"
+fi
+echo ""
+
 # Create ZIP bundle
 echo "Creating release bundle..."
 cd "$RELEASE_DIR"
-zip -r "../$ZIP_NAME" WindowsNetworkManager.exe WinDivert.dll web/ > /dev/null
+zip -r "../$ZIP_NAME" WindowsNetworkManager.exe WinDivert.dll web/ install_service.bat uninstall_service.bat configure_firewall.bat > /dev/null
 cd ..
 echo "✓ Created $ZIP_NAME"
 echo ""
@@ -83,6 +99,9 @@ echo "Files created:"
 echo "  - $RELEASE_DIR/WindowsNetworkManager.exe"
 echo "  - $RELEASE_DIR/WinDivert.dll"
 echo "  - $RELEASE_DIR/web/ (index.html, static/app.js)"
+echo "  - $RELEASE_DIR/install_service.bat"
+echo "  - $RELEASE_DIR/uninstall_service.bat"
+echo "  - $RELEASE_DIR/configure_firewall.bat"
 echo "  - $ZIP_NAME"
 echo ""
 echo "To create a GitHub release:"

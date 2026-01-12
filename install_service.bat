@@ -22,14 +22,27 @@ if %ERRORLEVEL% EQU 0 (
     echo Service installed successfully!
     echo ========================================
     echo.
-    echo The service will start automatically on boot.
-    echo.
-    echo To start the service now, run:
-    echo   net start WindowsNetworkManager
-    echo.
-    echo Or use:
-    echo   WindowsNetworkManager.exe -service start
-    echo.
+    echo Starting service...
+    net start WindowsNetworkManager
+    
+    if %ERRORLEVEL% EQU 0 (
+        echo.
+        echo ========================================
+        echo Service started successfully!
+        echo ========================================
+        echo.
+        echo The service is now running and will start automatically on boot.
+        echo.
+        echo Web interface is available at:
+        echo   http://localhost:18080
+        echo.
+    ) else (
+        echo.
+        echo WARNING: Service installed but failed to start.
+        echo You can start it manually with:
+        echo   net start WindowsNetworkManager
+        echo.
+    )
 ) else (
     echo.
     echo ========================================
