@@ -9,14 +9,15 @@ echo.
 set SERVICE_NAME=WindowsNetworkManager
 set EXE_NAME=WindowsNetworkManager.exe
 
-:: Check if executable path was provided as argument
+REM Check if executable path was provided as argument
+set PATH_PROVIDED=
 if not "%~1"=="" (
     set "EXE_PATH=%~1"
     echo Using provided executable path: !EXE_PATH!
-    :: Extract directory from provided path
+    REM Extract directory from provided path
     for %%f in ("!EXE_PATH!") do (
         set "EXE_DIR=%%~dpf"
-        :: Remove trailing backslash
+        REM Remove trailing backslash
         if "!EXE_DIR:~-1!"=="\" set "EXE_DIR=!EXE_DIR:~0,-1!"
     )
     echo Extracted directory: [!EXE_DIR!]
