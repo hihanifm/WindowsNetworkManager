@@ -46,16 +46,57 @@ echo ""
 
 # Copy WinDivert DLL from vendor directory
 echo "Copying WinDivert DLL from vendor directory..."
+DLL_FOUND=false
+
+# Try multiple locations
 if [ -f "vendor/windivert/WinDivert.dll" ]; then
     cp vendor/windivert/WinDivert.dll "$DIST_DIR/WinDivert.dll"
     echo "✓ Copied WinDivert.dll from vendor directory"
+    DLL_FOUND=true
 elif [ -f "WinDivert.dll" ]; then
     cp WinDivert.dll "$DIST_DIR/WinDivert.dll"
     echo "✓ Copied WinDivert.dll from current directory"
+    DLL_FOUND=true
 else
-    echo "ERROR: WinDivert.dll not found in vendor/windivert/ or current directory"
-    echo "Please ensure WinDivert.dll is in vendor/windivert/ directory"
-    exit 1
+    # Try to find in Downloads
+    DOWNLOADS_DLL=$(find ~/Downloads -name "WinDivert.dll" -type f 2>/dev/null | head -1)
+    if [ -n "$DOWNLOADS_DLL" ]; then
+        mkdir -p vendor/windivert
+        cp "$DOWNLOADS_DLL" vendor/windivert/WinDivert.dll
+        cp vendor/windivert/WinDivert.dll "$DIST_DIR/WinDivert.dll"
+        echo "✓ Found and copied WinDivert.dll from Downloads"
+        DLL_FOUND=true
+    fi
+fi
+
+if [ "$DLL_FOUND" = false ]; then
+    echo "WARNING: WinDivert.dll not found locally"
+    echo "Attempting to download from previous release..."
+    
+    # Try to download from latest GitHub release
+    if command -v gh &> /dev/null && gh auth status &> /dev/null; then
+        echo "Downloading WinDivert.dll from latest GitHub release..."
+        mkdir -p vendor/windivert
+        if gh release download --pattern "WinDivert.dll" --dir "vendor/windivert" 2>/dev/null; then
+            cp vendor/windivert/WinDivert.dll "$DIST_DIR/WinDivert.dll"
+            echo "✓ Downloaded and copied WinDivert.dll from GitHub release"
+            DLL_FOUND=true
+        fi
+    fi
+    
+    if [ "$DLL_FOUND" = false ]; then
+        echo ""
+        echo "ERROR: WinDivert.dll not found"
+        echo ""
+        echo "Please do one of the following:"
+        echo "  1. Download from: https://www.reqrypt.org/windivert.html"
+        echo "     Extract x64/WinDivert.dll and place it in vendor/windivert/WinDivert.dll"
+        echo ""
+        echo "  2. Or copy from a previous release to vendor/windivert/WinDivert.dll"
+        echo ""
+        echo "  3. Or place WinDivert.dll in the current directory"
+        exit 1
+    fi
 fi
 echo ""
 
@@ -137,14 +178,27 @@ fi
 # Check if tag exists
 if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
     echo "Tag $TAG_NAME already exists."
-    read -p "Do you want to delete and recreate it? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if [ -t 0 ]; then
+        # Interactive mode - ask user
+        read -p "Do you want to delete and recreate it? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            DELETE_TAG=true
+        else
+            DELETE_TAG=false
+        fi
+    else
+        # Non-interactive mode - auto-recreate tag
+        echo "Non-interactive mode: deleting and recreating tag..."
+        DELETE_TAG=true
+    fi
+    
+    if [ "$DELETE_TAG" = true ]; then
         git tag -d "$TAG_NAME" 2>/dev/null || true
         git push origin ":refs/tags/$TAG_NAME" 2>/dev/null || true
-        echo "Deleted existing tag"
+        echo "✓ Deleted existing tag"
     else
-        echo "Skipping tag creation. Using existing tag."
+        echo "Using existing tag."
     fi
 fi
 
