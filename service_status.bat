@@ -215,15 +215,19 @@ echo.
 :: 11. Startup Type
 echo [11] Startup Type:
 echo ----------------------------------------
-for /f "tokens=3" %%a in ('sc qc %SERVICE_NAME% ^| findstr "START_TYPE"') do (
+for /f "tokens=3" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "START_TYPE"') do (
     set START_TYPE=%%a
     echo Startup Type: %%a
     if "%%a"=="AUTO_START" (
         echo Service will start automatically on boot
-    ) else if "%%a"=="DEMAND_START" (
-        echo Service must be started manually
-    ) else if "%%a"=="DISABLED" (
-        echo Service is DISABLED
+    ) else (
+        if "%%a"=="DEMAND_START" (
+            echo Service must be started manually
+        ) else (
+            if "%%a"=="DISABLED" (
+                echo Service is DISABLED
+            )
+        )
     )
 )
 echo.
