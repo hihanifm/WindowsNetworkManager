@@ -32,15 +32,17 @@ func isRunningAsAdmin() bool {
 }
 
 var (
-	currentDelay   time.Duration
-	delayMutex     sync.RWMutex
-	useRandomDelay bool
-	randomDelayMutex sync.RWMutex
-	packetStats    = &PacketStats{}
-	statsMutex     sync.RWMutex
-	isRunning      bool
-	runningMutex   sync.RWMutex
-	packetEngine   *PacketEngine
+	currentDelay      time.Duration
+	delayMutex        sync.RWMutex
+	useRandomDelay    bool
+	randomDelayMutex  sync.RWMutex
+	packetStats       = &PacketStats{}
+	statsMutex        sync.RWMutex
+	isRunning         bool
+	runningMutex      sync.RWMutex
+	packetEngine      *PacketEngine
+	sessionEndTime    time.Time
+	sessionEndTimeMutex sync.RWMutex
 )
 
 type PacketStats struct {
@@ -51,10 +53,12 @@ type PacketStats struct {
 }
 
 type ConfigResponse struct {
-	DelayMs     int64  `json:"delay_ms"`
-	RandomDelay bool   `json:"random_delay"`
-	IsRunning   bool   `json:"is_running"`
-	Error       string `json:"error,omitempty"`
+	DelayMs          int64   `json:"delay_ms"`
+	RandomDelay      bool    `json:"random_delay"`
+	IsRunning        bool    `json:"is_running"`
+	DurationMinutes  int64   `json:"duration_minutes,omitempty"`
+	RemainingMinutes float64 `json:"remaining_minutes,omitempty"`
+	Error            string  `json:"error,omitempty"`
 }
 
 type StatsResponse struct {
@@ -252,10 +256,31 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		running := isRunning
 		runningMutex.RUnlock()
 
+		// Calculate duration and remaining time
+		sessionEndTimeMutex.RLock()
+		endTime := sessionEndTime
+		sessionEndTimeMutex.RUnlock()
+
+		var durationMinutes int64
+		var remainingMinutes float64
+		if !endTime.IsZero() && running {
+			now := time.Now()
+			if endTime.After(now) {
+				duration := endTime.Sub(now)
+				durationMinutes = int64(duration.Minutes())
+				remainingMinutes = duration.Minutes()
+			} else {
+				// Duration expired, should stop
+				remainingMinutes = 0
+			}
+		}
+
 		json.NewEncoder(w).Encode(ConfigResponse{
-			DelayMs:     delayMs,
-			RandomDelay: randomDelay,
-			IsRunning:   running,
+			DelayMs:          delayMs,
+			RandomDelay:      randomDelay,
+			IsRunning:        running,
+			DurationMinutes:  durationMinutes,
+			RemainingMinutes: remainingMinutes,
 		})
 
 	case "POST":
@@ -348,6 +373,13 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	isRunning = true
 	runningMutex.Unlock()
 
+	// Parse request body for optional duration
+	var req struct {
+		DurationMinutes int64 `json:"duration_minutes"`
+	}
+	// Ignore decode errors - duration is optional, empty body is fine
+	json.NewDecoder(r.Body).Decode(&req)
+
 	// Get current delay and random delay mode
 	delayMutex.RLock()
 	delay := currentDelay
@@ -379,10 +411,79 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 
 	go packetEngine.Start()
 
+	// Handle session duration if specified
+	var durationMinutes int64
+	if req.DurationMinutes > 0 {
+		durationMinutes = req.DurationMinutes
+		sessionEndTimeMutex.Lock()
+		sessionEndTime = time.Now().Add(time.Duration(req.DurationMinutes) * time.Minute)
+		sessionEndTimeMutex.Unlock()
+
+		// Start timer goroutine to auto-stop when duration expires
+		go func() {
+			ticker := time.NewTicker(1 * time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+					sessionEndTimeMutex.RLock()
+					endTime := sessionEndTime
+					sessionEndTimeMutex.RUnlock()
+
+					if endTime.IsZero() {
+						// Session was stopped manually, exit
+						return
+					}
+
+					if time.Now().After(endTime) || time.Now().Equal(endTime) {
+						log.Printf("[INFO] Session duration expired, stopping packet interception")
+						stopPacketInterception()
+						return
+					}
+				}
+			}
+		}()
+
+		log.Printf("[INFO] Session duration set to %d minutes", req.DurationMinutes)
+	} else {
+		// Clear session end time if no duration
+		sessionEndTimeMutex.Lock()
+		sessionEndTime = time.Time{}
+		sessionEndTimeMutex.Unlock()
+	}
+
 	log.Println("[INFO] Packet interception started successfully")
 	json.NewEncoder(w).Encode(ConfigResponse{
-		IsRunning: true,
+		IsRunning:       true,
+		DurationMinutes: durationMinutes,
 	})
+}
+
+// stopPacketInterception stops packet interception programmatically (used by duration timer)
+func stopPacketInterception() {
+	runningMutex.Lock()
+	if !isRunning {
+		runningMutex.Unlock()
+		return
+	}
+	isRunning = false
+	runningMutex.Unlock()
+
+	// Clear session end time
+	sessionEndTimeMutex.Lock()
+	sessionEndTime = time.Time{}
+	sessionEndTimeMutex.Unlock()
+
+	// Stop packet interception
+	if packetEngine != nil {
+		log.Println("Stopping packet engine...")
+		packetEngine.Stop()
+		packetEngine = nil
+		log.Println("[INFO] Packet engine stopped")
+	}
+
+	log.Println("[INFO] Packet interception stopped successfully")
 }
 
 func handleStop(w http.ResponseWriter, r *http.Request) {
@@ -398,18 +499,10 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	isRunning = false
 	runningMutex.Unlock()
 
-	// Stop packet interception
-	if packetEngine != nil {
-		log.Println("Stopping packet engine...")
-		packetEngine.Stop()
-		packetEngine = nil
-		log.Println("[INFO] Packet engine stopped")
-	}
+	stopPacketInterception()
 
-	log.Println("[INFO] Packet interception stopped successfully")
 	json.NewEncoder(w).Encode(ConfigResponse{
 		IsRunning: false,
 	})

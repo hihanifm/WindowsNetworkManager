@@ -1,6 +1,7 @@
 let statsInterval;
 let upgradeStatusInterval;
 let isServiceRunning = false;
+let countdownInterval;
 
 // Load current configuration on page load
 window.addEventListener('DOMContentLoaded', () => {
@@ -19,11 +20,23 @@ async function loadConfig() {
         updateStatus(isServiceRunning);
         updateButtonStates(isServiceRunning);
         
+        // Handle duration fields
+        if (config.duration_minutes) {
+            document.getElementById('duration').value = config.duration_minutes;
+        }
+        
         // Start or stop stats updates based on service status
         if (isServiceRunning) {
             startStatsUpdates();
+            // Start countdown timer if duration is set
+            if (config.duration_minutes && config.duration_minutes > 0) {
+                startCountdown();
+            } else {
+                stopCountdown();
+            }
         } else {
             stopStatsUpdates();
+            stopCountdown();
             // Still update stats once to show current values (even if stopped)
             updateStats();
         }
@@ -77,7 +90,19 @@ async function updateDelay() {
 
 async function startInterception() {
     try {
-        const response = await fetch('/api/start', { method: 'POST' });
+        const durationMinutes = parseInt(document.getElementById('duration').value) || 0;
+        const requestBody = {};
+        if (durationMinutes > 0) {
+            requestBody.duration_minutes = durationMinutes;
+        }
+        
+        const response = await fetch('/api/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        });
         const result = await response.json();
         
         if (result.error) {
@@ -87,6 +112,12 @@ async function startInterception() {
             updateStatus(true);
             updateButtonStates(true);
             startStatsUpdates(); // Start polling stats when service starts
+            // Start countdown timer if duration is set
+            if (durationMinutes > 0) {
+                startCountdown();
+            } else {
+                stopCountdown();
+            }
             showError(''); // Clear error
         }
     } catch (error) {
@@ -106,6 +137,7 @@ async function stopInterception() {
             updateStatus(false);
             updateButtonStates(false);
             stopStatsUpdates(); // Stop polling stats when service stops
+            stopCountdown(); // Stop countdown timer
             // Update stats once more to show final values
             updateStats();
             showError(''); // Clear error
@@ -211,6 +243,45 @@ function showError(message) {
         errorEl.classList.add('show');
     } else {
         errorEl.classList.remove('show');
+    }
+}
+
+function startCountdown() {
+    stopCountdown(); // Clear any existing interval
+    
+    countdownInterval = setInterval(async () => {
+        try {
+            const response = await fetch('/api/config');
+            const config = await response.json();
+            
+            const remainingEl = document.getElementById('remainingTime');
+            if (config.is_running && config.remaining_minutes && config.remaining_minutes > 0) {
+                const minutes = Math.floor(config.remaining_minutes);
+                const seconds = Math.floor((config.remaining_minutes - minutes) * 60);
+                remainingEl.textContent = `⏱️ ${minutes}m ${seconds}s remaining`;
+                remainingEl.style.display = 'block';
+            } else {
+                remainingEl.style.display = 'none';
+                stopCountdown();
+                // Session ended, reload config to update UI
+                if (!config.is_running) {
+                    loadConfig();
+                }
+            }
+        } catch (error) {
+            console.error('Failed to update countdown:', error);
+        }
+    }, 1000); // Update every second
+}
+
+function stopCountdown() {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+    const remainingEl = document.getElementById('remainingTime');
+    if (remainingEl) {
+        remainingEl.style.display = 'none';
     }
 }
 
