@@ -67,6 +67,19 @@
             border-color: #667eea;
         }
 
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #667eea;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
         button {
             padding: 12px 24px;
             border: none;
@@ -259,11 +272,18 @@
             <div class="control-group">
                 <label for="delay">Delay (ms):</label>
                 <input type="number" id="delay" min="0" max="10000" value="0">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="randomDelay">
+                    <label for="randomDelay">Random Delay</label>
+                </div>
                 <button class="btn-primary" onclick="updateDelay()">Set Delay</button>
+                <label for="duration">Duration (min, optional):</label>
+                <input type="number" id="duration" min="0" max="1440" value="0" placeholder="0 = unlimited">
                 <button class="btn-success" id="startBtn" onclick="startInterception()">Start</button>
                 <button class="btn-danger" id="stopBtn" onclick="stopInterception()" disabled>Stop</button>
                 <span id="status" class="status stopped">Stopped</span>
             </div>
+            <div id="remainingTime" style="display: none; margin-top: 10px; color: #666; font-size: 14px;"></div>
 
             <div id="error" class="error"></div>
 

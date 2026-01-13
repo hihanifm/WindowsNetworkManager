@@ -1,6 +1,7 @@
-let statsInterval;
+let statsEventSource = null;
 let upgradeStatusInterval;
 let isServiceRunning = false;
+let countdownInterval;
 
 // Load current configuration on page load
 window.addEventListener('DOMContentLoaded', () => {
@@ -14,17 +15,28 @@ async function loadConfig() {
         const response = await fetch('/api/config');
         const config = await response.json();
         document.getElementById('delay').value = config.delay_ms || 0;
+        document.getElementById('randomDelay').checked = config.random_delay || false;
         isServiceRunning = config.is_running || false;
         updateStatus(isServiceRunning);
         updateButtonStates(isServiceRunning);
         
+        // Handle duration fields
+        if (config.duration_minutes) {
+            document.getElementById('duration').value = config.duration_minutes;
+        }
+        
         // Start or stop stats updates based on service status
         if (isServiceRunning) {
             startStatsUpdates();
+            // Start countdown timer if duration is set
+            if (config.duration_minutes && config.duration_minutes > 0) {
+                startCountdown();
+            } else {
+                stopCountdown();
+            }
         } else {
             stopStatsUpdates();
-            // Still update stats once to show current values (even if stopped)
-            updateStats();
+            stopCountdown();
         }
     } catch (error) {
         showError('Failed to load configuration: ' + error.message);
@@ -33,6 +45,7 @@ async function loadConfig() {
 
 async function updateDelay() {
     const delayMs = parseInt(document.getElementById('delay').value);
+    const randomDelay = document.getElementById('randomDelay').checked;
     
     if (isNaN(delayMs) || delayMs < 0 || delayMs > 10000) {
         showError('Delay must be between 0 and 10000 milliseconds');
@@ -45,7 +58,7 @@ async function updateDelay() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ delay_ms: delayMs })
+            body: JSON.stringify({ delay_ms: delayMs, random_delay: randomDelay })
         });
 
         const result = await response.json();
@@ -75,7 +88,19 @@ async function updateDelay() {
 
 async function startInterception() {
     try {
-        const response = await fetch('/api/start', { method: 'POST' });
+        const durationMinutes = parseInt(document.getElementById('duration').value) || 0;
+        const requestBody = {};
+        if (durationMinutes > 0) {
+            requestBody.duration_minutes = durationMinutes;
+        }
+        
+        const response = await fetch('/api/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        });
         const result = await response.json();
         
         if (result.error) {
@@ -85,6 +110,12 @@ async function startInterception() {
             updateStatus(true);
             updateButtonStates(true);
             startStatsUpdates(); // Start polling stats when service starts
+            // Start countdown timer if duration is set
+            if (durationMinutes > 0) {
+                startCountdown();
+            } else {
+                stopCountdown();
+            }
             showError(''); // Clear error
         }
     } catch (error) {
@@ -103,9 +134,8 @@ async function stopInterception() {
             isServiceRunning = false;
             updateStatus(false);
             updateButtonStates(false);
-            stopStatsUpdates(); // Stop polling stats when service stops
-            // Update stats once more to show final values
-            updateStats();
+            stopStatsUpdates(); // Stop stats streaming when service stops
+            stopCountdown(); // Stop countdown timer
             showError(''); // Clear error
         }
     } catch (error) {
@@ -138,7 +168,7 @@ function updateButtonStates(isRunning) {
 }
 
 function startStatsUpdates() {
-    // Clear any existing interval
+    // Close any existing EventSource connection
     stopStatsUpdates();
     
     // Only start if service is running
@@ -146,36 +176,39 @@ function startStatsUpdates() {
         return;
     }
     
-    updateStats(); // Initial update
-    statsInterval = setInterval(() => {
-        // Check if service is still running before updating
-        if (isServiceRunning) {
-            updateStats();
-        } else {
-            stopStatsUpdates();
+    // Create EventSource connection to SSE endpoint
+    statsEventSource = new EventSource('/api/stats/stream');
+    
+    // Handle incoming stats updates
+    statsEventSource.addEventListener('message', (event) => {
+        try {
+            const stats = JSON.parse(event.data);
+            updateStatsDisplay(stats);
+        } catch (error) {
+            console.error('Failed to parse stats:', error);
         }
-    }, 1000); // Update every second
+    });
+    
+    // Handle errors
+    statsEventSource.addEventListener('error', (error) => {
+        console.error('Stats stream error:', error);
+        // EventSource will automatically try to reconnect
+        // If service stops, stopStatsUpdates will close the connection
+    });
 }
 
 function stopStatsUpdates() {
-    if (statsInterval) {
-        clearInterval(statsInterval);
-        statsInterval = null;
+    if (statsEventSource) {
+        statsEventSource.close();
+        statsEventSource = null;
     }
 }
 
-async function updateStats() {
-    try {
-        const response = await fetch('/api/stats');
-        const stats = await response.json();
-        
-        document.getElementById('totalPackets').textContent = formatNumber(stats.total_packets);
-        document.getElementById('delayedPackets').textContent = formatNumber(stats.delayed_packets);
-        document.getElementById('bytesProcessed').textContent = formatBytes(stats.bytes_processed);
-        document.getElementById('uptime').textContent = formatUptime(stats.uptime_seconds);
-    } catch (error) {
-        console.error('Failed to update stats:', error);
-    }
+function updateStatsDisplay(stats) {
+    document.getElementById('totalPackets').textContent = formatNumber(stats.total_packets);
+    document.getElementById('delayedPackets').textContent = formatNumber(stats.delayed_packets);
+    document.getElementById('bytesProcessed').textContent = formatBytes(stats.bytes_processed);
+    document.getElementById('uptime').textContent = formatUptime(stats.uptime_seconds);
 }
 
 function formatNumber(num) {
@@ -209,6 +242,45 @@ function showError(message) {
         errorEl.classList.add('show');
     } else {
         errorEl.classList.remove('show');
+    }
+}
+
+function startCountdown() {
+    stopCountdown(); // Clear any existing interval
+    
+    countdownInterval = setInterval(async () => {
+        try {
+            const response = await fetch('/api/config');
+            const config = await response.json();
+            
+            const remainingEl = document.getElementById('remainingTime');
+            if (config.is_running && config.remaining_minutes && config.remaining_minutes > 0) {
+                const minutes = Math.floor(config.remaining_minutes);
+                const seconds = Math.floor((config.remaining_minutes - minutes) * 60);
+                remainingEl.textContent = `⏱️ ${minutes}m ${seconds}s remaining`;
+                remainingEl.style.display = 'block';
+            } else {
+                remainingEl.style.display = 'none';
+                stopCountdown();
+                // Session ended, reload config to update UI
+                if (!config.is_running) {
+                    loadConfig();
+                }
+            }
+        } catch (error) {
+            console.error('Failed to update countdown:', error);
+        }
+    }, 1000); // Update every second
+}
+
+function stopCountdown() {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+    const remainingEl = document.getElementById('remainingTime');
+    if (remainingEl) {
+        remainingEl.style.display = 'none';
     }
 }
 

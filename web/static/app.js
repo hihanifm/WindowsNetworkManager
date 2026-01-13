@@ -1,4 +1,4 @@
-let statsInterval;
+let statsEventSource = null;
 let upgradeStatusInterval;
 let isServiceRunning = false;
 let countdownInterval;
@@ -37,8 +37,6 @@ async function loadConfig() {
         } else {
             stopStatsUpdates();
             stopCountdown();
-            // Still update stats once to show current values (even if stopped)
-            updateStats();
         }
     } catch (error) {
         showError('Failed to load configuration: ' + error.message);
@@ -136,10 +134,8 @@ async function stopInterception() {
             isServiceRunning = false;
             updateStatus(false);
             updateButtonStates(false);
-            stopStatsUpdates(); // Stop polling stats when service stops
+            stopStatsUpdates(); // Stop stats streaming when service stops
             stopCountdown(); // Stop countdown timer
-            // Update stats once more to show final values
-            updateStats();
             showError(''); // Clear error
         }
     } catch (error) {
@@ -172,7 +168,7 @@ function updateButtonStates(isRunning) {
 }
 
 function startStatsUpdates() {
-    // Clear any existing interval
+    // Close any existing EventSource connection
     stopStatsUpdates();
     
     // Only start if service is running
@@ -180,36 +176,39 @@ function startStatsUpdates() {
         return;
     }
     
-    updateStats(); // Initial update
-    statsInterval = setInterval(() => {
-        // Check if service is still running before updating
-        if (isServiceRunning) {
-            updateStats();
-        } else {
-            stopStatsUpdates();
+    // Create EventSource connection to SSE endpoint
+    statsEventSource = new EventSource('/api/stats/stream');
+    
+    // Handle incoming stats updates
+    statsEventSource.addEventListener('message', (event) => {
+        try {
+            const stats = JSON.parse(event.data);
+            updateStatsDisplay(stats);
+        } catch (error) {
+            console.error('Failed to parse stats:', error);
         }
-    }, 1000); // Update every second
+    });
+    
+    // Handle errors
+    statsEventSource.addEventListener('error', (error) => {
+        console.error('Stats stream error:', error);
+        // EventSource will automatically try to reconnect
+        // If service stops, stopStatsUpdates will close the connection
+    });
 }
 
 function stopStatsUpdates() {
-    if (statsInterval) {
-        clearInterval(statsInterval);
-        statsInterval = null;
+    if (statsEventSource) {
+        statsEventSource.close();
+        statsEventSource = null;
     }
 }
 
-async function updateStats() {
-    try {
-        const response = await fetch('/api/stats');
-        const stats = await response.json();
-        
-        document.getElementById('totalPackets').textContent = formatNumber(stats.total_packets);
-        document.getElementById('delayedPackets').textContent = formatNumber(stats.delayed_packets);
-        document.getElementById('bytesProcessed').textContent = formatBytes(stats.bytes_processed);
-        document.getElementById('uptime').textContent = formatUptime(stats.uptime_seconds);
-    } catch (error) {
-        console.error('Failed to update stats:', error);
-    }
+function updateStatsDisplay(stats) {
+    document.getElementById('totalPackets').textContent = formatNumber(stats.total_packets);
+    document.getElementById('delayedPackets').textContent = formatNumber(stats.delayed_packets);
+    document.getElementById('bytesProcessed').textContent = formatBytes(stats.bytes_processed);
+    document.getElementById('uptime').textContent = formatUptime(stats.uptime_seconds);
 }
 
 function formatNumber(num) {

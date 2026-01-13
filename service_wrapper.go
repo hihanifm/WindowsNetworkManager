@@ -52,6 +52,18 @@ func (p *program) Stop(s service.Service) error {
 		}
 	}
 
+	// Stop UDP discovery servers
+	udpMutex.Lock()
+	if udpConnIPv4 != nil {
+		udpConnIPv4.Close()
+		udpConnIPv4 = nil
+	}
+	if udpConnIPv6 != nil {
+		udpConnIPv6.Close()
+		udpConnIPv6 = nil
+	}
+	udpMutex.Unlock()
+
 	close(p.exit)
 	return nil
 }
@@ -81,6 +93,7 @@ func (p *program) run() {
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/api/config", handleConfig)
 	http.HandleFunc("/api/stats", handleStats)
+	http.HandleFunc("/api/stats/stream", handleStatsStream)
 	http.HandleFunc("/api/start", handleStart)
 	http.HandleFunc("/api/stop", handleStop)
 	http.HandleFunc("/api/network", handleNetwork)
@@ -132,6 +145,9 @@ func (p *program) run() {
 	// Services typically run with admin privileges, so we don't need to check/warn
 	serviceLogger.Info("Service mode - running with service account privileges")
 	serviceLogger.Infof("Note: Windows Firewall may need to allow incoming connections on port %s", port)
+
+	// Start UDP discovery server
+	startUDPDiscoveryServer(DiscoveryPort)
 
 	httpServer = &http.Server{
 		Addr:    bindAddr,

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +32,13 @@ func isRunningAsAdmin() bool {
 	return token.IsElevated()
 }
 
+// UDP discovery constants
+const (
+	DiscoveryPort     = "18081"
+	DiscoveryMagic    = "WNM-DISCOVER-v1"
+	IPv6MulticastAddr = "ff02::1"
+)
+
 var (
 	currentDelay      time.Duration
 	delayMutex        sync.RWMutex
@@ -43,6 +51,9 @@ var (
 	packetEngine      *PacketEngine
 	sessionEndTime    time.Time
 	sessionEndTimeMutex sync.RWMutex
+	udpConnIPv4       *net.UDPConn
+	udpConnIPv6       *net.UDPConn
+	udpMutex          sync.RWMutex
 )
 
 type PacketStats struct {
@@ -191,6 +202,7 @@ func main() {
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/api/config", handleConfig)
 	http.HandleFunc("/api/stats", handleStats)
+	http.HandleFunc("/api/stats/stream", handleStatsStream)
 	http.HandleFunc("/api/start", handleStart)
 	http.HandleFunc("/api/stop", handleStop)
 	http.HandleFunc("/api/network", handleNetwork)
@@ -229,6 +241,9 @@ func main() {
 	
 	log.Printf("Note: Windows Firewall may need to allow incoming connections on port %s", *port)
 	log.Println("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
+
+	// Start UDP discovery server
+	startUDPDiscoveryServer(DiscoveryPort)
 
 	if err := http.ListenAndServe(bindAddr, nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
@@ -355,6 +370,72 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 		BytesProcessed: stats.BytesProcessed,
 		UptimeSeconds:  uptime,
 	})
+}
+
+func handleStatsStream(w http.ResponseWriter, r *http.Request) {
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable buffering for nginx if used
+
+	// Flush headers immediately
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+	flusher.Flush()
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	// Create a channel to handle client disconnection
+	ctx := r.Context()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Client disconnected
+			return
+		case <-ticker.C:
+			// Check if service is running
+			runningMutex.RLock()
+			running := isRunning
+			runningMutex.RUnlock()
+
+			if !running {
+				// Service stopped, send empty or skip update
+				continue
+			}
+
+			// Get current stats
+			statsMutex.RLock()
+			stats := *packetStats
+			statsMutex.RUnlock()
+
+			uptime := time.Since(stats.StartTime).Seconds()
+
+			// Create response
+			response := StatsResponse{
+				TotalPackets:   stats.TotalPackets,
+				DelayedPackets: stats.DelayedPackets,
+				BytesProcessed: stats.BytesProcessed,
+				UptimeSeconds:  uptime,
+			}
+
+			// Marshal to JSON
+			jsonData, err := json.Marshal(response)
+			if err != nil {
+				log.Printf("[ERROR] Failed to marshal stats: %v", err)
+				continue
+			}
+
+			// Send SSE formatted data
+			fmt.Fprintf(w, "data: %s\n\n", jsonData)
+			flusher.Flush()
+		}
+	}
 }
 
 func handleStart(w http.ResponseWriter, r *http.Request) {
@@ -809,4 +890,252 @@ func getCompiledVersion() string {
 	log.Printf("[VERSION] Compiled version in binary: %s", compiledVer)
 	
 	return compiledVer
+}
+
+// startUDPDiscoveryServer starts both IPv4 and IPv6 UDP discovery servers
+func startUDPDiscoveryServer(port string) {
+	// Start IPv4 broadcast listener
+	go startIPv4DiscoveryServer(port)
+	
+	// Start IPv6 multicast listener
+	go startIPv6DiscoveryServer(port)
+}
+
+// startIPv4DiscoveryServer starts the IPv4 UDP broadcast discovery server
+func startIPv4DiscoveryServer(port string) {
+	addr, err := net.ResolveUDPAddr("udp4", "0.0.0.0:"+port)
+	if err != nil {
+		log.Printf("[UDP] Failed to resolve IPv4 address: %v", err)
+		return
+	}
+
+	conn, err := net.ListenUDP("udp4", addr)
+	if err != nil {
+		log.Printf("[UDP] Failed to start IPv4 discovery server: %v", err)
+		return
+	}
+
+	udpMutex.Lock()
+	udpConnIPv4 = conn
+	udpMutex.Unlock()
+
+	log.Printf("[UDP] IPv4 discovery server listening on port %s", port)
+	defer conn.Close()
+
+	buffer := make([]byte, 1024)
+	for {
+		n, clientAddr, err := conn.ReadFromUDP(buffer)
+		if err != nil {
+			// Check if connection was closed
+			udpMutex.RLock()
+			closed := udpConnIPv4 == nil
+			udpMutex.RUnlock()
+			if closed {
+				return
+			}
+			log.Printf("[UDP] Error reading IPv4 UDP packet: %v", err)
+			continue
+		}
+
+		// Check if this is a discovery request
+		request := strings.TrimSpace(string(buffer[:n]))
+		if request == DiscoveryMagic {
+			go handleUDPDiscovery(conn, clientAddr, false)
+		}
+	}
+}
+
+// startIPv6DiscoveryServer starts the IPv6 UDP multicast discovery server
+func startIPv6DiscoveryServer(port string) {
+	// Try to bind to IPv6 address
+	addr, err := net.ResolveUDPAddr("udp6", "[::]:"+port)
+	if err != nil {
+		log.Printf("[UDP] Failed to resolve IPv6 address: %v (IPv6 may not be available)", err)
+		return
+	}
+
+	conn, err := net.ListenUDP("udp6", addr)
+	if err != nil {
+		log.Printf("[UDP] Failed to start IPv6 discovery server: %v (IPv6 may not be available)", err)
+		return
+	}
+
+	udpMutex.Lock()
+	udpConnIPv6 = conn
+	udpMutex.Unlock()
+
+	// Note: On Windows, we listen on all interfaces and multicast packets
+	// will be received automatically. Platform-specific multicast group
+	// joining would require syscalls which we skip for simplicity.
+
+	log.Printf("[UDP] IPv6 discovery server listening on port %s (multicast: %s)", port, IPv6MulticastAddr)
+	defer conn.Close()
+
+	buffer := make([]byte, 1024)
+	for {
+		n, clientAddr, err := conn.ReadFromUDP(buffer)
+		if err != nil {
+			// Check if connection was closed
+			udpMutex.RLock()
+			closed := udpConnIPv6 == nil
+			udpMutex.RUnlock()
+			if closed {
+				return
+			}
+			log.Printf("[UDP] Error reading IPv6 UDP packet: %v", err)
+			continue
+		}
+
+		// Check if this is a discovery request
+		request := strings.TrimSpace(string(buffer[:n]))
+		if request == DiscoveryMagic {
+			go handleUDPDiscovery(conn, clientAddr, true)
+		}
+	}
+}
+
+// handleUDPDiscovery handles incoming UDP discovery requests
+func handleUDPDiscovery(conn *net.UDPConn, clientAddr *net.UDPAddr, isIPv6 bool) {
+	// Get current instance information
+	localIPs := getLocalIPs()
+	runningMutex.RLock()
+	running := isRunning
+	runningMutex.RUnlock()
+
+	delayMutex.RLock()
+	delayMs := currentDelay.Milliseconds()
+	delayMutex.RUnlock()
+
+	randomDelayMutex.RLock()
+	randomDelay := useRandomDelay
+	randomDelayMutex.RUnlock()
+
+	// Get the IP address of the interface that received the request
+	responseIP := clientAddr.IP.String()
+	if isIPv6 {
+		// For IPv6, use the local IP from the interface
+		// Try to find a matching local IPv6 address
+		localIPv6 := getLocalIPv6ForInterface(clientAddr.IP)
+		if localIPv6 != "" {
+			responseIP = localIPv6
+		}
+	} else {
+		// For IPv4, find the local IP on the same subnet
+		localIPv4 := getLocalIPv4ForInterface(clientAddr.IP)
+		if localIPv4 != "" {
+			responseIP = localIPv4
+		}
+	}
+
+	// Build response
+	response := map[string]interface{}{
+		"service":      version.ServiceName,
+		"version":      version.Version,
+		"port":         18080,
+		"ip":           responseIP,
+		"is_running":   running,
+		"delay_ms":     delayMs,
+		"random_delay": randomDelay,
+		"local_ips":    localIPs,
+	}
+
+	// Marshal to JSON
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		log.Printf("[UDP] Failed to marshal discovery response: %v", err)
+		return
+	}
+
+	// Send response back to client
+	_, err = conn.WriteToUDP(jsonData, clientAddr)
+	if err != nil {
+		log.Printf("[UDP] Failed to send discovery response: %v", err)
+	}
+}
+
+// getLocalIPv4ForInterface finds the local IPv4 address on the same subnet as the given IP
+func getLocalIPv4ForInterface(remoteIP net.IP) string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+
+			ip := ipNet.IP
+			if ip.To4() == nil {
+				continue
+			}
+
+			// Check if remote IP is in the same subnet
+			if ipNet.Contains(remoteIP) {
+				return ip.String()
+			}
+		}
+	}
+
+	return ""
+}
+
+// getLocalIPv6ForInterface finds a local IPv6 address for the interface
+func getLocalIPv6ForInterface(remoteIP net.IP) string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+
+			ip := ipNet.IP
+			if ip.To4() != nil {
+				continue // Skip IPv4
+			}
+
+			// Skip link-local and loopback
+			if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+
+			// Check if remote IP is in the same subnet or if this is a global unicast
+			if ipNet.Contains(remoteIP) || ip.IsGlobalUnicast() {
+				return ip.String()
+			}
+		}
+	}
+
+	return ""
 }
