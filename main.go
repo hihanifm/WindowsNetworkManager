@@ -32,13 +32,15 @@ func isRunningAsAdmin() bool {
 }
 
 var (
-	currentDelay time.Duration
-	delayMutex   sync.RWMutex
-	packetStats  = &PacketStats{}
-	statsMutex   sync.RWMutex
-	isRunning    bool
-	runningMutex sync.RWMutex
-	packetEngine *PacketEngine
+	currentDelay   time.Duration
+	delayMutex     sync.RWMutex
+	useRandomDelay bool
+	randomDelayMutex sync.RWMutex
+	packetStats    = &PacketStats{}
+	statsMutex     sync.RWMutex
+	isRunning      bool
+	runningMutex   sync.RWMutex
+	packetEngine   *PacketEngine
 )
 
 type PacketStats struct {
@@ -49,9 +51,10 @@ type PacketStats struct {
 }
 
 type ConfigResponse struct {
-	DelayMs   int64  `json:"delay_ms"`
-	IsRunning bool   `json:"is_running"`
-	Error     string `json:"error,omitempty"`
+	DelayMs     int64  `json:"delay_ms"`
+	RandomDelay bool   `json:"random_delay"`
+	IsRunning   bool   `json:"is_running"`
+	Error       string `json:"error,omitempty"`
 }
 
 type StatsResponse struct {
@@ -241,18 +244,24 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		delayMs := currentDelay.Milliseconds()
 		delayMutex.RUnlock()
 
+		randomDelayMutex.RLock()
+		randomDelay := useRandomDelay
+		randomDelayMutex.RUnlock()
+
 		runningMutex.RLock()
 		running := isRunning
 		runningMutex.RUnlock()
 
 		json.NewEncoder(w).Encode(ConfigResponse{
-			DelayMs:   delayMs,
-			IsRunning: running,
+			DelayMs:     delayMs,
+			RandomDelay: randomDelay,
+			IsRunning:   running,
 		})
 
 	case "POST":
 		var req struct {
-			DelayMs int64 `json:"delay_ms"`
+			DelayMs     int64 `json:"delay_ms"`
+			RandomDelay bool  `json:"random_delay"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -261,7 +270,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf("[HTTP] POST /api/config - Setting delay to %d ms", req.DelayMs)
+		log.Printf("[HTTP] POST /api/config - Setting delay to %d ms, random delay: %v", req.DelayMs, req.RandomDelay)
 
 		if req.DelayMs < 0 || req.DelayMs > 10000 {
 			log.Printf("[ERROR] Invalid delay value: %d ms (must be 0-10000)", req.DelayMs)
@@ -275,23 +284,29 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		currentDelay = time.Duration(req.DelayMs) * time.Millisecond
 		delayMutex.Unlock()
 
-		// Update delay in running packet engine
+		randomDelayMutex.Lock()
+		useRandomDelay = req.RandomDelay
+		randomDelayMutex.Unlock()
+
+		// Update delay and random delay mode in running packet engine
 		if packetEngine != nil {
 			packetEngine.SetDelay(currentDelay)
-			log.Printf("[INFO] Delay updated in running packet engine")
+			packetEngine.SetRandomDelay(req.RandomDelay)
+			log.Printf("[INFO] Delay and random delay mode updated in running packet engine")
 		} else {
-			log.Printf("[INFO] Delay will be applied when packet interception starts")
+			log.Printf("[INFO] Delay and random delay mode will be applied when packet interception starts")
 		}
 
-		log.Printf("[INFO] Delay updated to %d ms", req.DelayMs)
+		log.Printf("[INFO] Delay updated to %d ms, random delay: %v", req.DelayMs, req.RandomDelay)
 
 		runningMutex.RLock()
 		running := isRunning
 		runningMutex.RUnlock()
 
 		json.NewEncoder(w).Encode(ConfigResponse{
-			DelayMs:   req.DelayMs,
-			IsRunning: running,
+			DelayMs:     req.DelayMs,
+			RandomDelay: req.RandomDelay,
+			IsRunning:   running,
 		})
 
 	default:
@@ -333,12 +348,16 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	isRunning = true
 	runningMutex.Unlock()
 
-	// Get current delay
+	// Get current delay and random delay mode
 	delayMutex.RLock()
 	delay := currentDelay
 	delayMutex.RUnlock()
 
-	log.Printf("Attempting to start packet interception with delay: %v", delay)
+	randomDelayMutex.RLock()
+	randomDelay := useRandomDelay
+	randomDelayMutex.RUnlock()
+
+	log.Printf("Attempting to start packet interception with delay: %v, random delay: %v", delay, randomDelay)
 
 	// Start packet interception
 	var err error
@@ -354,6 +373,9 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	// Set random delay mode
+	packetEngine.SetRandomDelay(randomDelay)
 
 	go packetEngine.Start()
 
@@ -415,13 +437,18 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 	delayMs := currentDelay.Milliseconds()
 	delayMutex.RUnlock()
 
+	randomDelayMutex.RLock()
+	randomDelay := useRandomDelay
+	randomDelayMutex.RUnlock()
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service":    version.ServiceName,
-		"version":    version.Version,
-		"port":       18080,
-		"local_ips":  localIPs,
-		"is_running": running,
-		"delay_ms":   delayMs,
+		"service":      version.ServiceName,
+		"version":      version.Version,
+		"port":         18080,
+		"local_ips":    localIPs,
+		"is_running":   running,
+		"delay_ms":     delayMs,
+		"random_delay": randomDelay,
 	})
 }
 

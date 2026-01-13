@@ -14,6 +14,7 @@ async function loadConfig() {
         const response = await fetch('/api/config');
         const config = await response.json();
         document.getElementById('delay').value = config.delay_ms || 0;
+        document.getElementById('randomDelay').checked = config.random_delay || false;
         isServiceRunning = config.is_running || false;
         updateStatus(isServiceRunning);
         updateButtonStates(isServiceRunning);
@@ -33,6 +34,7 @@ async function loadConfig() {
 
 async function updateDelay() {
     const delayMs = parseInt(document.getElementById('delay').value);
+    const randomDelay = document.getElementById('randomDelay').checked;
     
     if (isNaN(delayMs) || delayMs < 0 || delayMs > 10000) {
         showError('Delay must be between 0 and 10000 milliseconds');
@@ -45,7 +47,7 @@ async function updateDelay() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ delay_ms: delayMs })
+            body: JSON.stringify({ delay_ms: delayMs, random_delay: randomDelay })
         });
 
         const result = await response.json();

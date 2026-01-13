@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,11 +21,13 @@ func contains(s, substr string) bool {
 
 // PacketEngine handles packet interception and delay
 type PacketEngine struct {
-	handle     *godivert.WinDivertHandle
-	delay      time.Duration
-	delayMutex sync.RWMutex
-	stopChan   chan struct{}
-	wg         sync.WaitGroup
+	handle          *godivert.WinDivertHandle
+	delay           time.Duration
+	delayMutex      sync.RWMutex
+	randomDelay     bool
+	randomDelayMutex sync.RWMutex
+	stopChan        chan struct{}
+	wg              sync.WaitGroup
 }
 
 // initWinDivertDLL initializes the WinDivert DLL by loading it from the executable directory
@@ -183,6 +186,20 @@ func (pe *PacketEngine) GetDelay() time.Duration {
 	return pe.delay
 }
 
+// SetRandomDelay updates the random delay mode
+func (pe *PacketEngine) SetRandomDelay(randomDelay bool) {
+	pe.randomDelayMutex.Lock()
+	pe.randomDelay = randomDelay
+	pe.randomDelayMutex.Unlock()
+}
+
+// GetRandomDelay returns the current random delay mode
+func (pe *PacketEngine) GetRandomDelay() bool {
+	pe.randomDelayMutex.RLock()
+	defer pe.randomDelayMutex.RUnlock()
+	return pe.randomDelay
+}
+
 // Start begins packet interception and delay processing
 func (pe *PacketEngine) Start() {
 	log.Println("Starting packet interception engine...")
@@ -291,14 +308,26 @@ func (pe *PacketEngine) processPackets() {
 				}
 			}
 
-			// Get current delay
+			// Get current delay and random delay mode
 			delay := pe.GetDelay()
+			useRandomDelay := pe.GetRandomDelay()
 
 			if delay > 0 {
+				// Calculate actual delay to apply
+				actualDelay := delay
+				if useRandomDelay {
+					// Generate random delay between 1ms and configured delay (inclusive)
+					delayMs := delay.Milliseconds()
+					if delayMs > 0 {
+						randomMs := rand.Int63n(delayMs) + 1 // 1 to delayMs (inclusive)
+						actualDelay = time.Duration(randomMs) * time.Millisecond
+					}
+				}
+
 				// Queue packet for delayed sending
 				dp := &delayedPacket{
 					packet: packet,
-					sendAt: time.Now().Add(delay),
+					sendAt: time.Now().Add(actualDelay),
 				}
 
 				select {
