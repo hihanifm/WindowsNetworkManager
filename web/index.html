@@ -327,6 +327,91 @@
             color: #94a3b8;
             margin-right: 8px;
         }
+
+        .logs-section {
+            margin-top: 20px;
+        }
+
+        .logs-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .logs-container {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .logs-container:empty::before {
+            content: "No logs available. Click Refresh to load logs...";
+            color: #64748b;
+            font-style: italic;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-entry.info {
+            color: #3b82f6;
+        }
+
+        .log-entry.warning {
+            color: #f59e0b;
+        }
+
+        .log-entry.error {
+            color: #ef4444;
+        }
+
+        .log-timestamp {
+            color: #94a3b8;
+            margin-right: 8px;
+            font-weight: normal;
+        }
+
+        .log-level {
+            margin-right: 8px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .log-entry.info .log-level {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+        }
+
+        .log-entry.warning .log-level {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        .log-entry.error .log-level {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .log-message {
+            color: #e2e8f0;
+        }
     </style>
 </head>
 <body>
@@ -378,6 +463,73 @@
         </div>
 
         <div class="card">
+            <h2>⏰ Scheduled Disruption</h2>
+            <p class="subtitle">Automatically create disruption sessions on specified days and times</p>
+            
+            <div class="control-group" style="margin-bottom: 20px;">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="scheduleEnabled">
+                    <label for="scheduleEnabled">Enable Schedule</label>
+                </div>
+                <button class="btn-primary" onclick="saveSchedule()">Save Schedule</button>
+            </div>
+
+            <div id="scheduleStatus" style="margin-bottom: 15px; padding: 10px; background: #f8fafc; border-radius: 6px; display: none;">
+                <strong>Status:</strong> <span id="scheduleStatusText">-</span>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">Days:</label>
+                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day0" value="0">
+                        <label for="day0">Sunday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day1" value="1">
+                        <label for="day1">Monday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day2" value="2">
+                        <label for="day2">Tuesday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day3" value="3">
+                        <label for="day3">Wednesday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day4" value="4">
+                        <label for="day4">Thursday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day5" value="5">
+                        <label for="day5">Friday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day6" value="6">
+                        <label for="day6">Saturday</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group" style="margin-bottom: 20px;">
+                <label for="scheduleStartTime">Start Time:</label>
+                <input type="time" id="scheduleStartTime" style="width: 150px;">
+                <label for="scheduleEndTime">End Time:</label>
+                <input type="time" id="scheduleEndTime" style="width: 150px;">
+            </div>
+
+            <div class="control-group">
+                <label for="scheduleMaxDelay">Max Delay (ms):</label>
+                <input type="number" id="scheduleMaxDelay" min="1" max="10000" value="1000" style="width: 150px;">
+            </div>
+
+            <div class="info-box" style="margin-top: 20px;">
+                <p><strong>📝 Note:</strong> The scheduler will create 3-6 random disruption sessions per hour during the configured time range. Each session lasts 2-5 minutes with random delays between 1ms and the configured max delay.</p>
+            </div>
+        </div>
+
+        <div class="card">
             <h2>📊 Statistics</h2>
             <div class="stats-grid">
                 <div class="stat-card">
@@ -400,6 +552,20 @@
         </div>
 
         <div class="card">
+            <h2>📋 Logs</h2>
+            <p class="subtitle">View recent log entries from this device</p>
+            
+            <div class="logs-section">
+                <div class="logs-controls">
+                    <button class="btn-primary" id="refreshLogsBtn">Refresh</button>
+                </div>
+                
+                <div id="logsContainer" class="logs-container"></div>
+                <div id="logsError" class="error" style="display: none; margin-top: 10px;"></div>
+            </div>
+        </div>
+
+        <div class="card">
             <h2>🏓 Ping Test</h2>
             <p class="subtitle">Test network connectivity and measure latency</p>
             
@@ -407,8 +573,8 @@
                 <div class="ping-controls">
                     <label for="pingDomain">Domain:</label>
                     <input type="text" id="pingDomain" placeholder="e.g., google.com" value="google.com">
-                    <button class="btn-primary" id="pingBtn" onclick="startPing()">Ping</button>
-                    <button class="btn-danger" id="pingStopBtn" onclick="stopPing()" disabled>Stop</button>
+                    <button class="btn-primary" id="pingBtn">Ping</button>
+                    <button class="btn-danger" id="pingStopBtn" disabled>Stop</button>
                 </div>
                 
                 <div id="pingResults" class="ping-results"></div>

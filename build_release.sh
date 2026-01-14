@@ -47,6 +47,22 @@ else
 fi
 echo ""
 
+# Copy WinDivert sys file (driver) from vendor directory
+echo "Copying WinDivert sys file from vendor directory..."
+if [ -f "vendor/windivert/WinDivert64.sys" ]; then
+    cp vendor/windivert/WinDivert64.sys "$RELEASE_DIR/WinDivert64.sys"
+    echo "✓ Copied WinDivert64.sys from vendor directory"
+elif [ -f "WinDivert64.sys" ]; then
+    cp WinDivert64.sys "$RELEASE_DIR/WinDivert64.sys"
+    echo "✓ Copied WinDivert64.sys from current directory"
+else
+    echo "WARNING: WinDivert64.sys not found in vendor/windivert/ or current directory"
+    echo "Please ensure WinDivert64.sys is in vendor/windivert/ directory"
+    echo "Or download from: https://www.reqrypt.org/windivert.html"
+    exit 1
+fi
+echo ""
+
 # Copy web directory
 echo "Copying web interface files..."
 if [ -d "web" ]; then
@@ -108,6 +124,7 @@ echo ""
 echo "Files created:"
 echo "  - $RELEASE_DIR/WindowsNetworkManager.exe"
 echo "  - $RELEASE_DIR/WinDivert.dll"
+echo "  - $RELEASE_DIR/WinDivert64.sys"
 echo "  - $RELEASE_DIR/web/ (index.html, static/app.js)"
 echo "  - $RELEASE_DIR/install_service.bat"
 echo "  - $RELEASE_DIR/uninstall_service.bat"

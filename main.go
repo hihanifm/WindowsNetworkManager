@@ -49,6 +49,8 @@ var (
 	sessionEndTimeMutex sync.RWMutex
 	autoRestartDelayMinutes int64 = 5 // Default 5 minutes
 	autoRestartDelayMutex sync.RWMutex
+	// Scheduler
+	scheduler *Scheduler
 	// Ping state
 	pingProcess    *exec.Cmd
 	pingRunning    bool
@@ -87,6 +89,19 @@ type StatsResponse struct {
 	DelayedPackets uint64  `json:"delayed_packets"`
 	BytesProcessed uint64  `json:"bytes_processed"`
 	UptimeSeconds  float64 `json:"uptime_seconds"`
+}
+
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Level     string `json:"level"`
+	EventID   int    `json:"event_id"`
+	Message   string `json:"message"`
+}
+
+type LogsResponse struct {
+	Entries []LogEntry `json:"entries"`
+	Count   int        `json:"count"`
+	Error   string     `json:"error,omitempty"`
 }
 
 func main() {
@@ -208,6 +223,13 @@ func main() {
 		log.Printf("Warning: Failed to initialize upgrade manager: %v", err)
 	}
 
+	// Initialize scheduler
+	scheduler = NewScheduler()
+	if err := scheduler.LoadConfig(); err != nil {
+		log.Printf("Warning: Failed to load schedule config: %v", err)
+	}
+	scheduler.Start()
+
 	// Setup HTTP routes
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/api/config", handleConfig)
@@ -223,6 +245,8 @@ func main() {
 	http.HandleFunc("/api/ping/start", handlePingStart)
 	http.HandleFunc("/api/ping/stop", handlePingStop)
 	http.HandleFunc("/api/ping/stream", handlePingStream)
+	http.HandleFunc("/api/schedule", handleSchedule)
+	http.HandleFunc("/api/logs", handleLogs)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
@@ -699,6 +723,65 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleSchedule(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if scheduler == nil {
+		http.Error(w, `{"error": "Scheduler not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	switch r.Method {
+	case "GET":
+		config := scheduler.GetConfig()
+		json.NewEncoder(w).Encode(config)
+
+	case "POST":
+		var req ScheduleConfig
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("[ERROR] Invalid schedule request: %v", err)
+			http.Error(w, `{"error": "Invalid request"}`, http.StatusBadRequest)
+			return
+		}
+
+		// Validate config
+		if req.MaxDelayMs < 1 || req.MaxDelayMs > 10000 {
+			http.Error(w, `{"error": "Max delay must be between 1 and 10000 milliseconds"}`, http.StatusBadRequest)
+			return
+		}
+
+		if len(req.Days) == 0 {
+			http.Error(w, `{"error": "At least one day must be selected"}`, http.StatusBadRequest)
+			return
+		}
+
+		// Validate time format
+		if _, _, err := ParseTime(req.StartTime); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "Invalid start time: %v"}`, err), http.StatusBadRequest)
+			return
+		}
+		if _, _, err := ParseTime(req.EndTime); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "Invalid end time: %v"}`, err), http.StatusBadRequest)
+			return
+		}
+
+		// Update config
+		if err := scheduler.SetConfig(req); err != nil {
+			log.Printf("[ERROR] Failed to save schedule config: %v", err)
+			http.Error(w, fmt.Sprintf(`{"error": "Failed to save schedule: %v"}`, err), http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("[HTTP] POST /api/schedule - Updated schedule: enabled=%v, days=%v, time=%s-%s, max_delay=%dms",
+			req.Enabled, req.Days, req.StartTime, req.EndTime, req.MaxDelayMs)
+
+		json.NewEncoder(w).Encode(req)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func updateStats(packets, bytes uint64) {
 	statsMutex.Lock()
 	packetStats.TotalPackets += packets
@@ -876,6 +959,109 @@ func clearState() error {
 
 	log.Printf("[STATE] Cleared state file")
 	return nil
+}
+
+// getEventLogs retrieves log entries from Windows Event Log
+func getEventLogs(count int) ([]LogEntry, error) {
+	if runtime.GOOS != "windows" {
+		return []LogEntry{}, fmt.Errorf("event logs are only available on Windows")
+	}
+
+	// Validate count
+	if count < 1 {
+		count = 50
+	}
+	if count > 1000 {
+		count = 1000 // Limit to prevent performance issues
+	}
+
+	// PowerShell command to get logs as JSON
+	psCmd := fmt.Sprintf(
+		"Get-EventLog -LogName Application -Source 'WindowsNetworkManager' -Newest %d -ErrorAction SilentlyContinue | "+
+			"Select-Object TimeGenerated, EntryType, EventID, Message | "+
+			"ConvertTo-Json -Compress",
+		count,
+	)
+
+	cmd := exec.Command("powershell", "-Command", psCmd)
+	output, err := cmd.Output()
+	if err != nil {
+		// If PowerShell fails, return empty array with error
+		return []LogEntry{}, fmt.Errorf("failed to retrieve logs: %v", err)
+	}
+
+	// Check if output is empty or just whitespace
+	outputStr := strings.TrimSpace(string(output))
+	if outputStr == "" || outputStr == "null" || outputStr == "[]" {
+		// No logs found, return empty array (not an error)
+		return []LogEntry{}, nil
+	}
+
+	// Parse JSON output from PowerShell
+	var rawEntries []map[string]interface{}
+	if err := json.Unmarshal([]byte(outputStr), &rawEntries); err != nil {
+		// Try parsing as single object (if only one entry)
+		var singleEntry map[string]interface{}
+		if err2 := json.Unmarshal([]byte(outputStr), &singleEntry); err2 == nil {
+			rawEntries = []map[string]interface{}{singleEntry}
+		} else {
+			// If parsing fails completely, return empty array with error
+			previewLen := 100
+			if len(outputStr) < previewLen {
+				previewLen = len(outputStr)
+			}
+			return []LogEntry{}, fmt.Errorf("failed to parse log output: %v (output: %s)", err, outputStr[:previewLen])
+		}
+	}
+
+	// Convert to LogEntry structs
+	entries := make([]LogEntry, 0, len(rawEntries))
+	for _, raw := range rawEntries {
+		entry := LogEntry{}
+
+		// Parse timestamp
+		if ts, ok := raw["TimeGenerated"].(string); ok {
+			// Try different date formats that PowerShell might return
+			dateFormats := []string{
+				"2006-01-02T15:04:05",
+				"2006-01-02T15:04:05.0000000",
+				"2006-01-02T15:04:05Z",
+				"2006-01-02T15:04:05-07:00",
+				time.RFC3339,
+				time.RFC3339Nano,
+			}
+			parsed := false
+			for _, format := range dateFormats {
+				if t, err := time.Parse(format, ts); err == nil {
+					entry.Timestamp = t.Format("2006-01-02 15:04:05")
+					parsed = true
+					break
+				}
+			}
+			if !parsed {
+				entry.Timestamp = ts // Use original if parsing fails
+			}
+		}
+
+		// Parse level (EntryType)
+		if level, ok := raw["EntryType"].(string); ok {
+			entry.Level = level
+		}
+
+		// Parse EventID
+		if eventID, ok := raw["EventID"].(float64); ok {
+			entry.EventID = int(eventID)
+		}
+
+		// Parse message
+		if msg, ok := raw["Message"].(string); ok {
+			entry.Message = msg
+		}
+
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
 }
 
 func handleUpgradeCheck(w http.ResponseWriter, r *http.Request) {
@@ -1127,8 +1313,25 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[HTTP] POST /api/ping/start - Starting ping to %s", domain)
 
-	// Create output channel for ping results
+	// Create output channel for ping results (with mutex protection)
+	pingMutex.Lock()
+	// Clean up any existing channel first
+	if pingOutputChan != nil {
+		// Channel might already exist, close it first
+		oldChan := pingOutputChan
+		pingOutputChan = nil
+		pingMutex.Unlock()
+		// Close outside mutex
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[ERROR] Panic closing old ping channel: %v", r)
+			}
+		}()
+		close(oldChan)
+		pingMutex.Lock()
+	}
 	pingOutputChan = make(chan string, 100)
+	pingMutex.Unlock()
 
 	// Start ping command (Windows: ping -t <domain> for continuous ping)
 	cmd := exec.Command("ping", "-t", domain)
@@ -1138,7 +1341,20 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		pingMutex.Lock()
 		pingRunning = false
-		pingMutex.Unlock()
+		// Clean up channel if it was created
+		if pingOutputChan != nil {
+			oldChan := pingOutputChan
+			pingOutputChan = nil
+			pingMutex.Unlock()
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[ERROR] Panic closing ping channel on error: %v", r)
+				}
+			}()
+			close(oldChan)
+		} else {
+			pingMutex.Unlock()
+		}
 		log.Printf("[ERROR] Failed to create stdout pipe: %v", err)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"error": fmt.Sprintf("Failed to start ping: %v", err),
@@ -1151,7 +1367,20 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		pingMutex.Lock()
 		pingRunning = false
-		pingMutex.Unlock()
+		// Clean up channel if it was created
+		if pingOutputChan != nil {
+			oldChan := pingOutputChan
+			pingOutputChan = nil
+			pingMutex.Unlock()
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[ERROR] Panic closing ping channel on error: %v", r)
+				}
+			}()
+			close(oldChan)
+		} else {
+			pingMutex.Unlock()
+		}
 		log.Printf("[ERROR] Failed to create stderr pipe: %v", err)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"error": fmt.Sprintf("Failed to start ping: %v", err),
@@ -1163,7 +1392,20 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 	if err := cmd.Start(); err != nil {
 		pingMutex.Lock()
 		pingRunning = false
-		pingMutex.Unlock()
+		// Clean up channel if it was created
+		if pingOutputChan != nil {
+			oldChan := pingOutputChan
+			pingOutputChan = nil
+			pingMutex.Unlock()
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[ERROR] Panic closing ping channel on error: %v", r)
+				}
+			}()
+			close(oldChan)
+		} else {
+			pingMutex.Unlock()
+		}
 		log.Printf("[ERROR] Failed to start ping command: %v", err)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"error": fmt.Sprintf("Failed to start ping: %v", err),
@@ -1177,11 +1419,26 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 
 	// Read stdout and send to channel
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[ERROR] Panic in ping stdout reader: %v", r)
+			}
+		}()
+		
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
+			pingMutex.RLock()
+			outputChan := pingOutputChan
+			pingMutex.RUnlock()
+			
+			if outputChan == nil {
+				// Channel was closed/cleared, stop reading
+				break
+			}
+			
 			select {
-			case pingOutputChan <- line:
+			case outputChan <- line:
 			default:
 				// Channel full, skip this line
 			}
@@ -1193,11 +1450,26 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 
 	// Read stderr and send to channel
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[ERROR] Panic in ping stderr reader: %v", r)
+			}
+		}()
+		
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			line := scanner.Text()
+			pingMutex.RLock()
+			outputChan := pingOutputChan
+			pingMutex.RUnlock()
+			
+			if outputChan == nil {
+				// Channel was closed/cleared, stop reading
+				break
+			}
+			
 			select {
-			case pingOutputChan <- line:
+			case outputChan <- line:
 			default:
 				// Channel full, skip this line
 			}
@@ -1209,16 +1481,52 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 
 	// Wait for command to finish in background
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[ERROR] Panic in ping wait goroutine: %v", r)
+				// Clean up state on panic
+				pingMutex.Lock()
+				pingRunning = false
+				pingOutputChan = nil
+				pingMutex.Unlock()
+			}
+		}()
+		
 		err := cmd.Wait()
 		pingMutex.Lock()
 		pingRunning = false
+		outputChan := pingOutputChan
+		pingMutex.Unlock()
+		
+		// Exit status 1 is normal for ping when stopped (Ctrl+C equivalent)
+		// Only log actual errors, not normal termination
 		if err != nil {
-			log.Printf("[INFO] Ping command finished with error: %v", err)
+			// Check if it's just an exit code (normal for stopped ping)
+			if exitError, ok := err.(*exec.ExitError); ok {
+				exitCode := exitError.ExitCode()
+				if exitCode == 1 {
+					// Exit code 1 is normal when ping is stopped
+					log.Printf("[INFO] Ping command stopped (exit code 1)")
+				} else {
+					log.Printf("[INFO] Ping command finished with exit code %d: %v", exitCode, err)
+				}
+			} else {
+				log.Printf("[INFO] Ping command finished with error: %v", err)
+			}
 		} else {
 			log.Printf("[INFO] Ping command finished")
 		}
-		pingMutex.Unlock()
-		close(pingOutputChan)
+		
+		// Safely close channel if it exists
+		if outputChan != nil {
+			pingMutex.Lock()
+			// Double-check channel still exists and hasn't been closed
+			if pingOutputChan == outputChan {
+				close(pingOutputChan)
+				pingOutputChan = nil
+			}
+			pingMutex.Unlock()
+		}
 	}()
 
 	log.Printf("[INFO] Ping started successfully to %s", domain)
@@ -1252,25 +1560,38 @@ func handlePingStop(w http.ResponseWriter, r *http.Request) {
 	pingMutex.Unlock()
 
 	if cmd != nil && cmd.Process != nil {
-		// Kill the ping process
-		if err := cmd.Process.Kill(); err != nil {
-			log.Printf("[ERROR] Failed to kill ping process: %v", err)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"error": fmt.Sprintf("Failed to stop ping: %v", err),
-			})
-			return
-		}
-		log.Printf("[INFO] Ping process killed")
+		// Kill the ping process (with error handling)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[ERROR] Panic killing ping process: %v", r)
+				}
+			}()
+			if err := cmd.Process.Kill(); err != nil {
+				// Log error but don't fail - process might already be dead
+				log.Printf("[WARN] Error killing ping process (may already be stopped): %v", err)
+			} else {
+				log.Printf("[INFO] Ping process killed")
+			}
+		}()
 	}
 
 	pingMutex.Lock()
 	pingRunning = false
+	outputChan := pingOutputChan
 	pingProcess = nil
-	if pingOutputChan != nil {
-		close(pingOutputChan)
-		pingOutputChan = nil
-	}
+	pingOutputChan = nil // Set to nil first to prevent writes
 	pingMutex.Unlock()
+	
+	// Close channel outside of mutex to avoid deadlock
+	if outputChan != nil {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[ERROR] Panic closing ping channel: %v", r)
+			}
+		}()
+		close(outputChan)
+	}
 
 	log.Printf("[INFO] Ping stopped successfully")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -1279,6 +1600,13 @@ func handlePingStop(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePingStream(w http.ResponseWriter, r *http.Request) {
+	// Add panic recovery to prevent crashes
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[ERROR] Panic in handlePingStream: %v", r)
+		}
+	}()
+	
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -1340,15 +1668,22 @@ func handlePingStream(w http.ResponseWriter, r *http.Request) {
 						pingMutex.RUnlock()
 						
 						if !stillRunning {
-							// Send final message
-							response := PingResponse{
-								Timestamp: time.Now().Format("15:04:05"),
-								Line:      "Ping stopped",
-								Type:      "info",
-							}
-							jsonData, _ := json.Marshal(response)
-							fmt.Fprintf(w, "data: %s\n\n", jsonData)
-							flusher.Flush()
+							// Send final message (with error handling)
+							func() {
+								defer func() {
+									if r := recover(); r != nil {
+										log.Printf("[ERROR] Panic sending final ping message: %v", r)
+									}
+								}()
+								response := PingResponse{
+									Timestamp: time.Now().Format("15:04:05"),
+									Line:      "Ping stopped",
+									Type:      "info",
+								}
+								jsonData, _ := json.Marshal(response)
+								fmt.Fprintf(w, "data: %s\n\n", jsonData)
+								flusher.Flush()
+							}()
 						}
 						// Channel closed, reset reference and break out of inner loop
 						lastChannel = nil
@@ -1383,9 +1718,16 @@ func handlePingStream(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 					
-					// Send SSE formatted data
-					fmt.Fprintf(w, "data: %s\n\n", jsonData)
-					flusher.Flush()
+					// Send SSE formatted data (with error handling)
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								log.Printf("[ERROR] Panic sending ping data: %v", r)
+							}
+						}()
+						fmt.Fprintf(w, "data: %s\n\n", jsonData)
+						flusher.Flush()
+					}()
 				default:
 					// No more data available right now
 					goto continueLoop
@@ -1394,4 +1736,54 @@ func handlePingStream(w http.ResponseWriter, r *http.Request) {
 		continueLoop:
 		}
 	}
+}
+
+func handleLogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Printf("[HTTP] GET /api/logs - Request received")
+
+	// Get count from query parameter (default: 50)
+	count := 50
+	if countStr := r.URL.Query().Get("count"); countStr != "" {
+		if parsedCount, err := fmt.Sscanf(countStr, "%d", &count); err != nil || parsedCount != 1 {
+			count = 50 // Default on parse error
+		}
+	}
+
+	// Validate count range
+	if count < 1 {
+		count = 50
+	}
+	if count > 1000 {
+		count = 1000
+	}
+
+	log.Printf("[HTTP] GET /api/logs - Retrieving %d log entries", count)
+
+	// Retrieve logs
+	entries, err := getEventLogs(count)
+	if err != nil {
+		log.Printf("[HTTP] GET /api/logs - Error: %v", err)
+		// Return error response but still include any entries we got
+		json.NewEncoder(w).Encode(LogsResponse{
+			Entries: entries,
+			Count:   len(entries),
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	log.Printf("[HTTP] GET /api/logs - Successfully retrieved %d log entries", len(entries))
+
+	// Return success response
+	json.NewEncoder(w).Encode(LogsResponse{
+		Entries: entries,
+		Count:   len(entries),
+	})
 }

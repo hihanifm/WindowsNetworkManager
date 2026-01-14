@@ -56,6 +56,11 @@ func (p *program) Stop(s service.Service) error {
 		}
 	}
 
+	// Stop scheduler
+	if scheduler != nil {
+		scheduler.Stop()
+	}
+
 	// Stop HTTP server
 	if httpServer != nil {
 		if err := httpServer.Shutdown(context.Background()); err != nil {
@@ -88,6 +93,13 @@ func (p *program) run() {
 		serviceLogger.Error("Failed to initialize upgrade manager: ", err)
 	}
 
+	// Initialize scheduler
+	scheduler = NewScheduler()
+	if err := scheduler.LoadConfig(); err != nil {
+		serviceLogger.Error("Failed to load schedule config: ", err)
+	}
+	scheduler.Start()
+
 	// Setup HTTP routes
 	http.HandleFunc("/", serveIndex)
 	http.HandleFunc("/api/config", handleConfig)
@@ -103,6 +115,8 @@ func (p *program) run() {
 	http.HandleFunc("/api/ping/start", handlePingStart)
 	http.HandleFunc("/api/ping/stop", handlePingStop)
 	http.HandleFunc("/api/ping/stream", handlePingStream)
+	http.HandleFunc("/api/schedule", handleSchedule)
+	http.HandleFunc("/api/logs", handleLogs)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))

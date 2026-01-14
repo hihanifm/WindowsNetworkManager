@@ -100,6 +100,62 @@ if [ "$DLL_FOUND" = false ]; then
 fi
 echo ""
 
+# Copy WinDivert sys file (driver) from vendor directory
+echo "Copying WinDivert sys file from vendor directory..."
+SYS_FOUND=false
+
+# Try multiple locations for WinDivert64.sys (64-bit is most common)
+if [ -f "vendor/windivert/WinDivert64.sys" ]; then
+    cp vendor/windivert/WinDivert64.sys "$DIST_DIR/WinDivert64.sys"
+    echo "✓ Copied WinDivert64.sys from vendor directory"
+    SYS_FOUND=true
+elif [ -f "WinDivert64.sys" ]; then
+    cp WinDivert64.sys "$DIST_DIR/WinDivert64.sys"
+    echo "✓ Copied WinDivert64.sys from current directory"
+    SYS_FOUND=true
+else
+    # Try to find in Downloads
+    DOWNLOADS_SYS=$(find ~/Downloads -name "WinDivert64.sys" -type f 2>/dev/null | head -1)
+    if [ -n "$DOWNLOADS_SYS" ]; then
+        mkdir -p vendor/windivert
+        cp "$DOWNLOADS_SYS" vendor/windivert/WinDivert64.sys
+        cp vendor/windivert/WinDivert64.sys "$DIST_DIR/WinDivert64.sys"
+        echo "✓ Found and copied WinDivert64.sys from Downloads"
+        SYS_FOUND=true
+    fi
+fi
+
+if [ "$SYS_FOUND" = false ]; then
+    echo "WARNING: WinDivert64.sys not found locally"
+    echo "Attempting to download from previous release..."
+    
+    # Try to download from latest GitHub release
+    if command -v gh &> /dev/null && gh auth status &> /dev/null; then
+        echo "Downloading WinDivert64.sys from latest GitHub release..."
+        mkdir -p vendor/windivert
+        if gh release download --pattern "WinDivert64.sys" --dir "vendor/windivert" 2>/dev/null; then
+            cp vendor/windivert/WinDivert64.sys "$DIST_DIR/WinDivert64.sys"
+            echo "✓ Downloaded and copied WinDivert64.sys from GitHub release"
+            SYS_FOUND=true
+        fi
+    fi
+    
+    if [ "$SYS_FOUND" = false ]; then
+        echo ""
+        echo "ERROR: WinDivert64.sys not found"
+        echo ""
+        echo "Please do one of the following:"
+        echo "  1. Download from: https://www.reqrypt.org/windivert.html"
+        echo "     Extract x64/WinDivert64.sys and place it in vendor/windivert/WinDivert64.sys"
+        echo ""
+        echo "  2. Or copy from a previous release to vendor/windivert/WinDivert64.sys"
+        echo ""
+        echo "  3. Or place WinDivert64.sys in the current directory"
+        exit 1
+    fi
+fi
+echo ""
+
 # Copy web directory
 echo "Copying web interface files..."
 if [ -d "web" ]; then
@@ -235,6 +291,7 @@ RELEASE_NOTES="## Windows Network Manager $VERSION
 ### Files Included
 - \`WindowsNetworkManager.exe\` - Main application
 - \`WinDivert.dll\` - Required library (WinDivert 2.2.0)
+- \`WinDivert64.sys\` - WinDivert kernel driver (required)
 - \`web/\` - Web interface files (index.html, static/app.js)
             - \`install_service.bat\` - Install Windows service (run as Administrator)
             - \`uninstall_service.bat\` - Uninstall Windows service (run as Administrator)
@@ -276,6 +333,7 @@ echo ""
 echo "Files created:"
 echo "  - $DIST_DIR/WindowsNetworkManager.exe"
 echo "  - $DIST_DIR/WinDivert.dll"
+echo "  - $DIST_DIR/WinDivert64.sys"
 echo "  - $DIST_DIR/web/ (index.html, static/app.js)"
 echo "  - $DIST_DIR/install_service.bat"
 echo "  - $DIST_DIR/uninstall_service.bat"

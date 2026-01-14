@@ -2,11 +2,15 @@ let statsEventSource = null;
 let upgradeStatusInterval;
 let isServiceRunning = false;
 let countdownInterval;
+let pingEventSource = null;
+let isPingRunning = false;
 
 // Load current configuration on page load
 window.addEventListener('DOMContentLoaded', () => {
     loadConfig();
     loadUpgradeInfo();
+    loadSchedule();
+    loadLogs();
     // Don't start stats updates yet - wait for config to load
 });
 
@@ -88,8 +92,15 @@ async function updateDelay() {
 
 async function startInterception() {
     try {
+        // Always read latest values from screen (delay, random delay, duration)
+        const delayMs = parseInt(document.getElementById('delay').value) || 0;
+        const randomDelay = document.getElementById('randomDelay').checked;
         const durationMinutes = parseInt(document.getElementById('duration').value) || 0;
-        const requestBody = {};
+        
+        const requestBody = {
+            delay_ms: delayMs,
+            random_delay: randomDelay
+        };
         if (durationMinutes > 0) {
             requestBody.duration_minutes = durationMinutes;
         }
@@ -469,4 +480,364 @@ async function checkUpgradeStatus() {
     } catch (error) {
         console.error('Failed to check upgrade status:', error);
     }
+}
+
+// Ping functions
+async function startPing() {
+    const domain = document.getElementById('pingDomain').value.trim();
+    
+    if (!domain) {
+        showError('Please enter a domain name');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/ping/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ domain: domain })
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            showError(result.error);
+        } else {
+            isPingRunning = true;
+            updatePingButtonStates(true);
+            clearPingResults();
+            startPingStream();
+            showError(''); // Clear error
+        }
+    } catch (error) {
+        showError('Failed to start ping: ' + error.message);
+    }
+}
+
+async function stopPing() {
+    try {
+        const response = await fetch('/api/ping/stop', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            showError(result.error);
+        } else {
+            isPingRunning = false;
+            updatePingButtonStates(false);
+            stopPingStream();
+            appendPingResult('Ping stopped', 'info');
+            showError(''); // Clear error
+        }
+    } catch (error) {
+        showError('Failed to stop ping: ' + error.message);
+    }
+}
+
+function startPingStream() {
+    // Close any existing EventSource connection
+    stopPingStream();
+    
+    // Only start if ping is running
+    if (!isPingRunning) {
+        return;
+    }
+    
+    // Create EventSource connection to SSE endpoint
+    pingEventSource = new EventSource('/api/ping/stream');
+    
+    // Handle incoming ping updates
+    pingEventSource.addEventListener('message', (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            appendPingResult(data.line, data.type, data.timestamp);
+        } catch (error) {
+            console.error('Failed to parse ping data:', error);
+        }
+    });
+    
+    // Handle errors
+    pingEventSource.addEventListener('error', (error) => {
+        console.error('Ping stream error:', error);
+        // Check if ping is still running
+        if (!isPingRunning) {
+            // Ping was stopped, close connection
+            stopPingStream();
+        }
+        // EventSource will automatically try to reconnect
+    });
+}
+
+function stopPingStream() {
+    if (pingEventSource) {
+        pingEventSource.close();
+        pingEventSource = null;
+    }
+}
+
+function appendPingResult(line, type, timestamp) {
+    const resultsDiv = document.getElementById('pingResults');
+    if (!resultsDiv) return;
+    
+    const lineDiv = document.createElement('div');
+    lineDiv.className = `ping-result-line ${type}`;
+    
+    const ts = timestamp || new Date().toLocaleTimeString();
+    lineDiv.innerHTML = `<span class="ping-timestamp">[${ts}]</span>${escapeHtml(line)}`;
+    
+    resultsDiv.appendChild(lineDiv);
+    
+    // Auto-scroll to bottom
+    resultsDiv.scrollTop = resultsDiv.scrollHeight;
+}
+
+function clearPingResults() {
+    const resultsDiv = document.getElementById('pingResults');
+    if (resultsDiv) {
+        resultsDiv.innerHTML = '';
+    }
+}
+
+function updatePingButtonStates(isRunning) {
+    const pingBtn = document.getElementById('pingBtn');
+    const pingStopBtn = document.getElementById('pingStopBtn');
+    const pingDomainInput = document.getElementById('pingDomain');
+    
+    if (isRunning) {
+        pingBtn.disabled = true;
+        pingStopBtn.disabled = false;
+        pingDomainInput.disabled = true;
+    } else {
+        pingBtn.disabled = false;
+        pingStopBtn.disabled = true;
+        pingDomainInput.disabled = false;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Schedule functions
+async function loadSchedule() {
+    try {
+        const response = await fetch('/api/schedule');
+        const schedule = await response.json();
+        
+        document.getElementById('scheduleEnabled').checked = schedule.enabled || false;
+        document.getElementById('scheduleStartTime').value = schedule.start_time || '09:00';
+        document.getElementById('scheduleEndTime').value = schedule.end_time || '18:00';
+        document.getElementById('scheduleMaxDelay').value = schedule.max_delay_ms || 1000;
+        
+        // Set day checkboxes
+        if (schedule.days && Array.isArray(schedule.days)) {
+            for (let i = 0; i <= 6; i++) {
+                const checkbox = document.getElementById('day' + i);
+                if (checkbox) {
+                    checkbox.checked = schedule.days.includes(i);
+                }
+            }
+        } else {
+            // Default: Monday-Friday (1-5)
+            document.getElementById('day1').checked = true;
+            document.getElementById('day2').checked = true;
+            document.getElementById('day3').checked = true;
+            document.getElementById('day4').checked = true;
+            document.getElementById('day5').checked = true;
+        }
+        
+        updateScheduleStatus(schedule);
+    } catch (error) {
+        console.error('Failed to load schedule:', error);
+        showError('Failed to load schedule configuration: ' + error.message);
+    }
+}
+
+async function saveSchedule() {
+    try {
+        const enabled = document.getElementById('scheduleEnabled').checked;
+        const startTime = document.getElementById('scheduleStartTime').value;
+        const endTime = document.getElementById('scheduleEndTime').value;
+        const maxDelayMs = parseInt(document.getElementById('scheduleMaxDelay').value);
+        
+        // Get selected days
+        const days = [];
+        for (let i = 0; i <= 6; i++) {
+            const checkbox = document.getElementById('day' + i);
+            if (checkbox && checkbox.checked) {
+                days.push(i);
+            }
+        }
+        
+        if (days.length === 0) {
+            showError('Please select at least one day');
+            return;
+        }
+        
+        if (isNaN(maxDelayMs) || maxDelayMs < 1 || maxDelayMs > 10000) {
+            showError('Max delay must be between 1 and 10000 milliseconds');
+            return;
+        }
+        
+        const schedule = {
+            enabled: enabled,
+            days: days,
+            start_time: startTime,
+            end_time: endTime,
+            max_delay_ms: maxDelayMs
+        };
+        
+        const response = await fetch('/api/schedule', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(schedule)
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            showError('Failed to save schedule: ' + result.error);
+        } else {
+            showError(''); // Clear error
+            updateScheduleStatus(result);
+            console.log('Schedule saved successfully');
+        }
+    } catch (error) {
+        showError('Failed to save schedule: ' + error.message);
+    }
+}
+
+function updateScheduleStatus(schedule) {
+    const statusEl = document.getElementById('scheduleStatus');
+    const statusTextEl = document.getElementById('scheduleStatusText');
+    
+    if (!schedule.enabled) {
+        statusEl.style.display = 'none';
+        return;
+    }
+    
+    statusEl.style.display = 'block';
+    
+    // Check if current time is within schedule
+    const now = new Date();
+    const currentDay = now.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    
+    // Check if current day is in schedule
+    const dayInSchedule = schedule.days && schedule.days.includes(currentDay);
+    
+    // Parse start and end times
+    const [startHour, startMin] = (schedule.start_time || '09:00').split(':').map(Number);
+    const [endHour, endMin] = (schedule.end_time || '18:00').split(':').map(Number);
+    
+    const currentTimeMinutes = currentHour * 60 + currentMinute;
+    const startTimeMinutes = startHour * 60 + startMin;
+    let endTimeMinutes = endHour * 60 + endMin;
+    
+    // Handle case where end time is next day
+    if (endTimeMinutes <= startTimeMinutes) {
+        endTimeMinutes += 24 * 60;
+        if (currentTimeMinutes < startTimeMinutes) {
+            // Check if we're in the previous day's end period
+            const adjustedCurrentTime = currentTimeMinutes + 24 * 60;
+            if (adjustedCurrentTime >= startTimeMinutes - 24 * 60 && adjustedCurrentTime <= endTimeMinutes) {
+                statusTextEl.textContent = 'Active (within schedule time range)';
+                statusEl.style.background = '#d1fae5';
+                statusTextEl.style.color = '#065f46';
+                return;
+            }
+        }
+    }
+    
+    const withinTimeRange = currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes;
+    const isActive = dayInSchedule && withinTimeRange;
+    
+    if (isActive) {
+        statusTextEl.textContent = 'Active (within schedule time range)';
+        statusEl.style.background = '#d1fae5';
+        statusTextEl.style.color = '#065f46';
+    } else {
+        let reason = '';
+        if (!dayInSchedule) {
+            reason = 'Current day not in schedule';
+        } else if (!withinTimeRange) {
+            reason = 'Outside schedule time range';
+        }
+        statusTextEl.textContent = 'Inactive - ' + reason;
+        statusEl.style.background = '#fee2e2';
+        statusTextEl.style.color = '#991b1b';
+    }
+}
+
+// Logs functions
+async function loadLogs() {
+    const logsContainer = document.getElementById('logsContainer');
+    const logsError = document.getElementById('logsError');
+    
+    if (!logsContainer) return;
+    
+    try {
+        const response = await fetch('/api/logs?count=50');
+        const result = await response.json();
+        
+        if (result.error) {
+            logsError.textContent = result.error;
+            logsError.style.display = 'block';
+            logsContainer.innerHTML = '';
+        } else {
+            logsError.style.display = 'none';
+            renderLogs(result.entries || []);
+        }
+    } catch (error) {
+        logsError.textContent = 'Failed to load logs: ' + error.message;
+        logsError.style.display = 'block';
+        logsContainer.innerHTML = '';
+        console.error('Failed to load logs:', error);
+    }
+}
+
+function refreshLogs() {
+    loadLogs();
+}
+
+function renderLogs(entries) {
+    const logsContainer = document.getElementById('logsContainer');
+    if (!logsContainer) return;
+    
+    if (entries.length === 0) {
+        logsContainer.innerHTML = '<div style="color: #64748b; font-style: italic;">No log entries found.</div>';
+        return;
+    }
+    
+    // Reverse entries to show newest first (PowerShell returns oldest first)
+    const reversedEntries = [...entries].reverse();
+    
+    logsContainer.innerHTML = reversedEntries.map(entry => {
+        const levelClass = entry.level ? entry.level.toLowerCase() : 'info';
+        const levelDisplay = entry.level || 'Info';
+        const timestamp = entry.timestamp || 'N/A';
+        const message = escapeHtml(entry.message || '');
+        const eventID = entry.event_id ? ` [EventID: ${entry.event_id}]` : '';
+        
+        return `<div class="log-entry ${levelClass}">
+            <span class="log-timestamp">[${timestamp}]</span>
+            <span class="log-level">${levelDisplay}</span>
+            <span class="log-message">${message}${eventID}</span>
+        </div>`;
+    }).join('');
+    
+    // Auto-scroll to bottom (newest entries)
+    logsContainer.scrollTop = logsContainer.scrollHeight;
 }
