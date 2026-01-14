@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"time"
 
@@ -32,13 +31,6 @@ func isRunningAsAdmin() bool {
 	return token.IsElevated()
 }
 
-// UDP discovery constants
-const (
-	DiscoveryPort     = "18081"
-	DiscoveryMagic    = "WNM-DISCOVER-v1"
-	IPv6MulticastAddr = "ff02::1"
-)
-
 var (
 	currentDelay      time.Duration
 	delayMutex        sync.RWMutex
@@ -51,9 +43,8 @@ var (
 	packetEngine      *PacketEngine
 	sessionEndTime    time.Time
 	sessionEndTimeMutex sync.RWMutex
-	udpConnIPv4       *net.UDPConn
-	udpConnIPv6       *net.UDPConn
-	udpMutex          sync.RWMutex
+	autoRestartDelayMinutes int64 = 5 // Default 5 minutes
+	autoRestartDelayMutex sync.RWMutex
 )
 
 type PacketStats struct {
@@ -64,12 +55,21 @@ type PacketStats struct {
 }
 
 type ConfigResponse struct {
-	DelayMs          int64   `json:"delay_ms"`
-	RandomDelay      bool    `json:"random_delay"`
-	IsRunning        bool    `json:"is_running"`
-	DurationMinutes  int64   `json:"duration_minutes,omitempty"`
-	RemainingMinutes float64 `json:"remaining_minutes,omitempty"`
-	Error            string  `json:"error,omitempty"`
+	DelayMs                 int64   `json:"delay_ms"`
+	RandomDelay             bool    `json:"random_delay"`
+	IsRunning               bool    `json:"is_running"`
+	DurationMinutes         int64   `json:"duration_minutes,omitempty"`
+	RemainingMinutes        float64 `json:"remaining_minutes,omitempty"`
+	AutoRestartDelayMinutes int64   `json:"auto_restart_delay_minutes,omitempty"`
+	Error                   string  `json:"error,omitempty"`
+}
+
+// StateFile represents the persisted state for auto-restart after reboot
+type StateFile struct {
+	WasRunning              bool  `json:"was_running"`
+	DelayMs                 int64 `json:"delay_ms"`
+	RandomDelay             bool  `json:"random_delay"`
+	AutoRestartDelayMinutes int64 `json:"auto_restart_delay_minutes"`
 }
 
 type StatsResponse struct {
@@ -242,9 +242,6 @@ func main() {
 	log.Printf("Note: Windows Firewall may need to allow incoming connections on port %s", *port)
 	log.Println("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
 
-	// Start UDP discovery server
-	startUDPDiscoveryServer(DiscoveryPort)
-
 	if err := http.ListenAndServe(bindAddr, nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
@@ -271,6 +268,10 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		running := isRunning
 		runningMutex.RUnlock()
 
+		autoRestartDelayMutex.RLock()
+		autoRestartDelay := autoRestartDelayMinutes
+		autoRestartDelayMutex.RUnlock()
+
 		// Calculate duration and remaining time
 		sessionEndTimeMutex.RLock()
 		endTime := sessionEndTime
@@ -291,17 +292,19 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 
 		json.NewEncoder(w).Encode(ConfigResponse{
-			DelayMs:          delayMs,
-			RandomDelay:      randomDelay,
-			IsRunning:        running,
-			DurationMinutes:  durationMinutes,
-			RemainingMinutes: remainingMinutes,
+			DelayMs:                 delayMs,
+			RandomDelay:             randomDelay,
+			IsRunning:               running,
+			DurationMinutes:         durationMinutes,
+			RemainingMinutes:        remainingMinutes,
+			AutoRestartDelayMinutes: autoRestartDelay,
 		})
 
 	case "POST":
 		var req struct {
-			DelayMs     int64 `json:"delay_ms"`
-			RandomDelay bool  `json:"random_delay"`
+			DelayMs                 int64 `json:"delay_ms"`
+			RandomDelay             bool  `json:"random_delay"`
+			AutoRestartDelayMinutes int64 `json:"auto_restart_delay_minutes"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -320,13 +323,30 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Update delay
 		delayMutex.Lock()
 		currentDelay = time.Duration(req.DelayMs) * time.Millisecond
 		delayMutex.Unlock()
 
+		// Update random delay
 		randomDelayMutex.Lock()
 		useRandomDelay = req.RandomDelay
 		randomDelayMutex.Unlock()
+
+		// Update auto-restart delay if provided
+		if req.AutoRestartDelayMinutes > 0 {
+			if req.AutoRestartDelayMinutes > 60 {
+				log.Printf("[ERROR] Invalid auto-restart delay: %d minutes (must be 0-60)", req.AutoRestartDelayMinutes)
+				json.NewEncoder(w).Encode(ConfigResponse{
+					Error: "Auto-restart delay must be between 0 and 60 minutes",
+				})
+				return
+			}
+			autoRestartDelayMutex.Lock()
+			autoRestartDelayMinutes = req.AutoRestartDelayMinutes
+			autoRestartDelayMutex.Unlock()
+			log.Printf("[INFO] Auto-restart delay updated to %d minutes", req.AutoRestartDelayMinutes)
+		}
 
 		// Update delay and random delay mode in running packet engine
 		if packetEngine != nil {
@@ -343,10 +363,15 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		running := isRunning
 		runningMutex.RUnlock()
 
+		autoRestartDelayMutex.RLock()
+		autoRestartDelay := autoRestartDelayMinutes
+		autoRestartDelayMutex.RUnlock()
+
 		json.NewEncoder(w).Encode(ConfigResponse{
-			DelayMs:     req.DelayMs,
-			RandomDelay: req.RandomDelay,
-			IsRunning:   running,
+			DelayMs:                 req.DelayMs,
+			RandomDelay:             req.RandomDelay,
+			IsRunning:               running,
+			AutoRestartDelayMinutes: autoRestartDelay,
 		})
 
 	default:
@@ -454,21 +479,45 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	isRunning = true
 	runningMutex.Unlock()
 
-	// Parse request body for optional duration
+	// Parse request body for delay, random delay, and duration
+	// Always read latest values from request (frontend will send them)
 	var req struct {
+		DelayMs         int64 `json:"delay_ms"`
+		RandomDelay     bool  `json:"random_delay"`
 		DurationMinutes int64 `json:"duration_minutes"`
 	}
-	// Ignore decode errors - duration is optional, empty body is fine
-	json.NewDecoder(r.Body).Decode(&req)
-
-	// Get current delay and random delay mode
-	delayMutex.RLock()
-	delay := currentDelay
-	delayMutex.RUnlock()
-
-	randomDelayMutex.RLock()
-	randomDelay := useRandomDelay
-	randomDelayMutex.RUnlock()
+	
+	// Decode request body - if empty or decode fails, use in-memory values as fallback
+	var delay time.Duration
+	var randomDelay bool
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+		// Successfully decoded, use values from request and update in-memory state
+		delay = time.Duration(req.DelayMs) * time.Millisecond
+		randomDelay = req.RandomDelay
+		
+		// Update in-memory variables
+		delayMutex.Lock()
+		currentDelay = delay
+		delayMutex.Unlock()
+		
+		randomDelayMutex.Lock()
+		useRandomDelay = randomDelay
+		randomDelayMutex.Unlock()
+		
+		log.Printf("[INFO] Using values from request: delay=%dms, random_delay=%v", req.DelayMs, randomDelay)
+	} else {
+		// Failed to decode or empty body, use in-memory values as fallback
+		delayMutex.RLock()
+		delay = currentDelay
+		delayMutex.RUnlock()
+		
+		randomDelayMutex.RLock()
+		randomDelay = useRandomDelay
+		randomDelayMutex.RUnlock()
+		
+		log.Printf("[INFO] Using in-memory values (request decode failed or empty): delay=%v, random_delay=%v", delay, randomDelay)
+	}
 
 	log.Printf("Attempting to start packet interception with delay: %v, random delay: %v", delay, randomDelay)
 
@@ -535,6 +584,12 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Println("[INFO] Packet interception started successfully")
+
+	// Save state for auto-restart after reboot
+	if err := saveState(); err != nil {
+		log.Printf("[WARN] Failed to save state: %v", err)
+	}
+
 	json.NewEncoder(w).Encode(ConfigResponse{
 		IsRunning:       true,
 		DurationMinutes: durationMinutes,
@@ -583,6 +638,11 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 	runningMutex.Unlock()
 
 	stopPacketInterception()
+
+	// Clear state file since this is a manual stop (won't auto-start after reboot)
+	if err := clearState(); err != nil {
+		log.Printf("[WARN] Failed to clear state: %v", err)
+	}
 
 	json.NewEncoder(w).Encode(ConfigResponse{
 		IsRunning: false,
@@ -700,6 +760,109 @@ func getLocalIPs() []string {
 	}
 
 	return ips
+}
+
+// getStateFilePath returns the path to the state file
+func getStateFilePath() (string, error) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("failed to get executable path: %v", err)
+	}
+	exeDir := filepath.Dir(exePath)
+	return filepath.Join(exeDir, "state.json"), nil
+}
+
+// saveState saves the current state to state.json
+func saveState() error {
+	statePath, err := getStateFilePath()
+	if err != nil {
+		return err
+	}
+
+	runningMutex.RLock()
+	wasRunning := isRunning
+	runningMutex.RUnlock()
+
+	if !wasRunning {
+		// Don't save state if not running
+		return nil
+	}
+
+	delayMutex.RLock()
+	delayMs := currentDelay.Milliseconds()
+	delayMutex.RUnlock()
+
+	randomDelayMutex.RLock()
+	randomDelay := useRandomDelay
+	randomDelayMutex.RUnlock()
+
+	autoRestartDelayMutex.RLock()
+	autoRestartDelay := autoRestartDelayMinutes
+	autoRestartDelayMutex.RUnlock()
+
+	state := StateFile{
+		WasRunning:              true,
+		DelayMs:                 delayMs,
+		RandomDelay:             randomDelay,
+		AutoRestartDelayMinutes: autoRestartDelay,
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal state: %v", err)
+	}
+
+	if err := os.WriteFile(statePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write state file: %v", err)
+	}
+
+	log.Printf("[STATE] Saved state: delay=%dms, random_delay=%v, auto_restart_delay=%dmin", delayMs, randomDelay, autoRestartDelay)
+	return nil
+}
+
+// loadState loads the state from state.json
+func loadState() (*StateFile, error) {
+	statePath, err := getStateFilePath()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No state file, return nil (not an error)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read state file: %v", err)
+	}
+
+	var state StateFile
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal state: %v", err)
+	}
+
+	log.Printf("[STATE] Loaded state: was_running=%v, delay=%dms, random_delay=%v, auto_restart_delay=%dmin",
+		state.WasRunning, state.DelayMs, state.RandomDelay, state.AutoRestartDelayMinutes)
+	return &state, nil
+}
+
+// clearState removes the state file
+func clearState() error {
+	statePath, err := getStateFilePath()
+	if err != nil {
+		return err
+	}
+
+	if err := os.Remove(statePath); err != nil {
+		if os.IsNotExist(err) {
+			// File doesn't exist, that's fine
+			return nil
+		}
+		return fmt.Errorf("failed to remove state file: %v", err)
+	}
+
+	log.Printf("[STATE] Cleared state file")
+	return nil
 }
 
 func handleUpgradeCheck(w http.ResponseWriter, r *http.Request) {
@@ -890,252 +1053,4 @@ func getCompiledVersion() string {
 	log.Printf("[VERSION] Compiled version in binary: %s", compiledVer)
 	
 	return compiledVer
-}
-
-// startUDPDiscoveryServer starts both IPv4 and IPv6 UDP discovery servers
-func startUDPDiscoveryServer(port string) {
-	// Start IPv4 broadcast listener
-	go startIPv4DiscoveryServer(port)
-	
-	// Start IPv6 multicast listener
-	go startIPv6DiscoveryServer(port)
-}
-
-// startIPv4DiscoveryServer starts the IPv4 UDP broadcast discovery server
-func startIPv4DiscoveryServer(port string) {
-	addr, err := net.ResolveUDPAddr("udp4", "0.0.0.0:"+port)
-	if err != nil {
-		log.Printf("[UDP] Failed to resolve IPv4 address: %v", err)
-		return
-	}
-
-	conn, err := net.ListenUDP("udp4", addr)
-	if err != nil {
-		log.Printf("[UDP] Failed to start IPv4 discovery server: %v", err)
-		return
-	}
-
-	udpMutex.Lock()
-	udpConnIPv4 = conn
-	udpMutex.Unlock()
-
-	log.Printf("[UDP] IPv4 discovery server listening on port %s", port)
-	defer conn.Close()
-
-	buffer := make([]byte, 1024)
-	for {
-		n, clientAddr, err := conn.ReadFromUDP(buffer)
-		if err != nil {
-			// Check if connection was closed
-			udpMutex.RLock()
-			closed := udpConnIPv4 == nil
-			udpMutex.RUnlock()
-			if closed {
-				return
-			}
-			log.Printf("[UDP] Error reading IPv4 UDP packet: %v", err)
-			continue
-		}
-
-		// Check if this is a discovery request
-		request := strings.TrimSpace(string(buffer[:n]))
-		if request == DiscoveryMagic {
-			go handleUDPDiscovery(conn, clientAddr, false)
-		}
-	}
-}
-
-// startIPv6DiscoveryServer starts the IPv6 UDP multicast discovery server
-func startIPv6DiscoveryServer(port string) {
-	// Try to bind to IPv6 address
-	addr, err := net.ResolveUDPAddr("udp6", "[::]:"+port)
-	if err != nil {
-		log.Printf("[UDP] Failed to resolve IPv6 address: %v (IPv6 may not be available)", err)
-		return
-	}
-
-	conn, err := net.ListenUDP("udp6", addr)
-	if err != nil {
-		log.Printf("[UDP] Failed to start IPv6 discovery server: %v (IPv6 may not be available)", err)
-		return
-	}
-
-	udpMutex.Lock()
-	udpConnIPv6 = conn
-	udpMutex.Unlock()
-
-	// Note: On Windows, we listen on all interfaces and multicast packets
-	// will be received automatically. Platform-specific multicast group
-	// joining would require syscalls which we skip for simplicity.
-
-	log.Printf("[UDP] IPv6 discovery server listening on port %s (multicast: %s)", port, IPv6MulticastAddr)
-	defer conn.Close()
-
-	buffer := make([]byte, 1024)
-	for {
-		n, clientAddr, err := conn.ReadFromUDP(buffer)
-		if err != nil {
-			// Check if connection was closed
-			udpMutex.RLock()
-			closed := udpConnIPv6 == nil
-			udpMutex.RUnlock()
-			if closed {
-				return
-			}
-			log.Printf("[UDP] Error reading IPv6 UDP packet: %v", err)
-			continue
-		}
-
-		// Check if this is a discovery request
-		request := strings.TrimSpace(string(buffer[:n]))
-		if request == DiscoveryMagic {
-			go handleUDPDiscovery(conn, clientAddr, true)
-		}
-	}
-}
-
-// handleUDPDiscovery handles incoming UDP discovery requests
-func handleUDPDiscovery(conn *net.UDPConn, clientAddr *net.UDPAddr, isIPv6 bool) {
-	// Get current instance information
-	localIPs := getLocalIPs()
-	runningMutex.RLock()
-	running := isRunning
-	runningMutex.RUnlock()
-
-	delayMutex.RLock()
-	delayMs := currentDelay.Milliseconds()
-	delayMutex.RUnlock()
-
-	randomDelayMutex.RLock()
-	randomDelay := useRandomDelay
-	randomDelayMutex.RUnlock()
-
-	// Get the IP address of the interface that received the request
-	responseIP := clientAddr.IP.String()
-	if isIPv6 {
-		// For IPv6, use the local IP from the interface
-		// Try to find a matching local IPv6 address
-		localIPv6 := getLocalIPv6ForInterface(clientAddr.IP)
-		if localIPv6 != "" {
-			responseIP = localIPv6
-		}
-	} else {
-		// For IPv4, find the local IP on the same subnet
-		localIPv4 := getLocalIPv4ForInterface(clientAddr.IP)
-		if localIPv4 != "" {
-			responseIP = localIPv4
-		}
-	}
-
-	// Build response
-	response := map[string]interface{}{
-		"service":      version.ServiceName,
-		"version":      version.Version,
-		"port":         18080,
-		"ip":           responseIP,
-		"is_running":   running,
-		"delay_ms":     delayMs,
-		"random_delay": randomDelay,
-		"local_ips":    localIPs,
-	}
-
-	// Marshal to JSON
-	jsonData, err := json.Marshal(response)
-	if err != nil {
-		log.Printf("[UDP] Failed to marshal discovery response: %v", err)
-		return
-	}
-
-	// Send response back to client
-	_, err = conn.WriteToUDP(jsonData, clientAddr)
-	if err != nil {
-		log.Printf("[UDP] Failed to send discovery response: %v", err)
-	}
-}
-
-// getLocalIPv4ForInterface finds the local IPv4 address on the same subnet as the given IP
-func getLocalIPv4ForInterface(remoteIP net.IP) string {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return ""
-	}
-
-	for _, iface := range interfaces {
-		if iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		if iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-
-		for _, addr := range addrs {
-			ipNet, ok := addr.(*net.IPNet)
-			if !ok {
-				continue
-			}
-
-			ip := ipNet.IP
-			if ip.To4() == nil {
-				continue
-			}
-
-			// Check if remote IP is in the same subnet
-			if ipNet.Contains(remoteIP) {
-				return ip.String()
-			}
-		}
-	}
-
-	return ""
-}
-
-// getLocalIPv6ForInterface finds a local IPv6 address for the interface
-func getLocalIPv6ForInterface(remoteIP net.IP) string {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return ""
-	}
-
-	for _, iface := range interfaces {
-		if iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		if iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-
-		for _, addr := range addrs {
-			ipNet, ok := addr.(*net.IPNet)
-			if !ok {
-				continue
-			}
-
-			ip := ipNet.IP
-			if ip.To4() != nil {
-				continue // Skip IPv4
-			}
-
-			// Skip link-local and loopback
-			if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-				continue
-			}
-
-			// Check if remote IP is in the same subnet or if this is a global unicast
-			if ipNet.Contains(remoteIP) || ip.IsGlobalUnicast() {
-				return ip.String()
-			}
-		}
-	}
-
-	return ""
 }

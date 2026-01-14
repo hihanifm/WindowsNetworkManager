@@ -32,7 +32,6 @@ func main() {
 	workers := scanCmd.Int("workers", DefaultWorkers, "Number of parallel workers")
 	timeout := scanCmd.Duration("timeout", DefaultTimeout, "Timeout per IP check")
 	jsonOutput := scanCmd.Bool("json", false, "Output in JSON format")
-	useBroadcast := scanCmd.Bool("broadcast", true, "Use UDP broadcast/multicast discovery (faster, default: true)")
 
 	openCmd := flag.NewFlagSet("open", flag.ExitOnError)
 
@@ -63,7 +62,7 @@ func main() {
 	switch os.Args[1] {
 	case "scan":
 		scanCmd.Parse(os.Args[2:])
-		instances, err := ScanNetworkWithBroadcast(*workers, *timeout, *useBroadcast)
+		instances, err := ScanNetwork(*workers, *timeout)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error scanning network: %v\n", err)
 			os.Exit(1)
@@ -87,7 +86,7 @@ func main() {
 
 	case "list":
 		// For now, just run a scan. Could implement caching later
-		instances, err := ScanNetworkWithBroadcast(DefaultWorkers, DefaultTimeout, true)
+		instances, err := ScanNetwork(DefaultWorkers, DefaultTimeout)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error scanning network: %v\n", err)
 			os.Exit(1)
@@ -115,7 +114,6 @@ Scan Options:
   -workers int      Number of parallel workers (default: %d)
   -timeout duration Timeout per IP check (default: %v)
   -json             Output results in JSON format
-  -broadcast        Use UDP broadcast/multicast discovery (faster, default: true)
 
 Examples:
   wnm-scanner scan

@@ -88,8 +88,15 @@ async function updateDelay() {
 
 async function startInterception() {
     try {
+        // Always read latest values from screen (delay, random delay, duration)
+        const delayMs = parseInt(document.getElementById('delay').value) || 0;
+        const randomDelay = document.getElementById('randomDelay').checked;
         const durationMinutes = parseInt(document.getElementById('duration').value) || 0;
-        const requestBody = {};
+        
+        const requestBody = {
+            delay_ms: delayMs,
+            random_delay: randomDelay
+        };
         if (durationMinutes > 0) {
             requestBody.duration_minutes = durationMinutes;
         }

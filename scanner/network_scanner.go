@@ -12,22 +12,11 @@ type ProgressCallback func(scanned, total, found int, message string)
 
 // ScanNetwork scans the local network for WindowsNetworkManager instances
 func ScanNetwork(workers int, timeout time.Duration) ([]InstanceInfo, error) {
-	return ScanNetworkWithBroadcast(workers, timeout, true)
-}
-
-// ScanNetworkWithBroadcast scans with optional broadcast discovery
-func ScanNetworkWithBroadcast(workers int, timeout time.Duration, useBroadcast bool) ([]InstanceInfo, error) {
-	return ScanNetworkWithProgressAndBroadcast(workers, timeout, nil, useBroadcast)
+	return ScanNetworkWithProgress(workers, timeout, nil)
 }
 
 // ScanNetworkWithProgress scans the local network with progress reporting
-// It first tries broadcast/multicast discovery, then falls back to HTTP scanning
 func ScanNetworkWithProgress(workers int, timeout time.Duration, progressCallback ProgressCallback) ([]InstanceInfo, error) {
-	return ScanNetworkWithProgressAndBroadcast(workers, timeout, progressCallback, true)
-}
-
-// ScanNetworkWithProgressAndBroadcast scans with optional broadcast discovery
-func ScanNetworkWithProgressAndBroadcast(workers int, timeout time.Duration, progressCallback ProgressCallback, useBroadcast bool) ([]InstanceInfo, error) {
 	subnets, err := getAllLocalSubnets()
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect local subnets: %v", err)
@@ -38,33 +27,9 @@ func ScanNetworkWithProgressAndBroadcast(workers int, timeout time.Duration, pro
 	}
 
 	var allInstances []InstanceInfo
-
-	// Try broadcast/multicast discovery first if enabled
-	if useBroadcast {
-		if progressCallback != nil {
-			progressCallback(0, 0, 0, "Discovering via UDP broadcast/multicast...")
-		}
-		
-		broadcastInstances, err := discoverViaBroadcast(timeout)
-		if err == nil && len(broadcastInstances) > 0 {
-			allInstances = append(allInstances, broadcastInstances...)
-			if progressCallback != nil {
-				progressCallback(0, 0, len(allInstances),
-					fmt.Sprintf("Found %d instance(s) via broadcast discovery", len(allInstances)))
-			}
-			// Return early if broadcast found instances
-			return allInstances, nil
-		}
-		
-		if progressCallback != nil {
-			progressCallback(0, 0, 0, "Broadcast discovery found no instances, falling back to HTTP scanning...")
-		}
-	}
-
-	// Fall back to HTTP scanning
 	totalIPs := 0
 	scannedIPs := 0
-	foundCount := len(allInstances)
+	foundCount := 0
 
 	// Scan each subnet
 	for i, subnet := range subnets {
@@ -157,73 +122,47 @@ func getAllLocalSubnets() ([]NetworkSubnet, error) {
 			}
 
 			ip := ipNet.IP
-			
-			// Handle IPv4 addresses
-			if ip.To4() != nil {
-				// Skip loopback and link-local
-				if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-					continue
-				}
+			// Only consider IPv4 addresses
+			if ip.To4() == nil {
+				continue
+			}
 
-				// Calculate subnet
-				mask := ipNet.Mask
-				ones, bits := mask.Size()
-				if ones > 0 && ones <= 24 {
-					networkIP := ipNet.IP.Mask(mask)
-					cidr := fmt.Sprintf("%s/%d", networkIP.String(), ones)
-					
-					// Calculate first and last IP
-					hostBits := bits - ones
-					if hostBits > 8 {
-						hostBits = 8 // Limit to /24
-					}
-					
-					firstIP := make(net.IP, len(networkIP))
-					copy(firstIP, networkIP)
-					firstIP[3] = 1 // First usable IP
-					
-					lastIP := make(net.IP, len(networkIP))
-					copy(lastIP, networkIP)
-					maxHosts := (1 << hostBits) - 2 // Exclude .0 and .255
-					if maxHosts > 254 {
-						maxHosts = 254
-					}
-					lastIP[3] = byte(maxHosts) // Last usable IP
-					
-					subnets = append(subnets, NetworkSubnet{
-						CIDR:      cidr,
-						FirstIP:   firstIP.String(),
-						LastIP:    lastIP.String(),
-						Interface: iface.Name,
-					})
-				}
-			} else {
-				// Handle IPv6 addresses
-				// Skip loopback and link-local unicast (we'll use multicast for discovery)
-				if ip.IsLoopback() {
-					continue
+			// Skip loopback and link-local
+			if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+
+			// Calculate subnet
+			mask := ipNet.Mask
+			ones, bits := mask.Size()
+			if ones > 0 && ones <= 24 {
+				networkIP := ipNet.IP.Mask(mask)
+				cidr := fmt.Sprintf("%s/%d", networkIP.String(), ones)
+				
+				// Calculate first and last IP
+				hostBits := bits - ones
+				if hostBits > 8 {
+					hostBits = 8 // Limit to /24
 				}
 				
-				// Include global unicast and unique local addresses for IPv6
-				// Note: For discovery, we use multicast (ff02::1), but we still track
-				// the subnet for potential future use
-				if ip.IsGlobalUnicast() || ip.IsLinkLocalUnicast() {
-					mask := ipNet.Mask
-					ones, _ := mask.Size()
-					if ones > 0 {
-						networkIP := ipNet.IP.Mask(mask)
-						cidr := fmt.Sprintf("%s/%d", networkIP.String(), ones)
-						
-						// For IPv6, we don't calculate first/last IP ranges
-						// Discovery uses multicast instead
-						subnets = append(subnets, NetworkSubnet{
-							CIDR:      cidr,
-							FirstIP:   networkIP.String(),
-							LastIP:    networkIP.String(),
-							Interface: iface.Name,
-						})
-					}
+				firstIP := make(net.IP, len(networkIP))
+				copy(firstIP, networkIP)
+				firstIP[3] = 1 // First usable IP
+				
+				lastIP := make(net.IP, len(networkIP))
+				copy(lastIP, networkIP)
+				maxHosts := (1 << hostBits) - 2 // Exclude .0 and .255
+				if maxHosts > 254 {
+					maxHosts = 254
 				}
+				lastIP[3] = byte(maxHosts) // Last usable IP
+				
+				subnets = append(subnets, NetworkSubnet{
+					CIDR:      cidr,
+					FirstIP:   firstIP.String(),
+					LastIP:    lastIP.String(),
+					Interface: iface.Name,
+				})
 			}
 		}
 	}
