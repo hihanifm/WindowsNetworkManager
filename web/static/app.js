@@ -2,6 +2,8 @@ let statsEventSource = null;
 let upgradeStatusInterval;
 let isServiceRunning = false;
 let countdownInterval;
+let pingEventSource = null;
+let isPingRunning = false;
 
 // Load current configuration on page load
 window.addEventListener('DOMContentLoaded', () => {
@@ -476,4 +478,149 @@ async function checkUpgradeStatus() {
     } catch (error) {
         console.error('Failed to check upgrade status:', error);
     }
+}
+
+// Ping functions
+async function startPing() {
+    const domain = document.getElementById('pingDomain').value.trim();
+    
+    if (!domain) {
+        showError('Please enter a domain name');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/ping/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ domain: domain })
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            showError(result.error);
+        } else {
+            isPingRunning = true;
+            updatePingButtonStates(true);
+            clearPingResults();
+            startPingStream();
+            showError(''); // Clear error
+        }
+    } catch (error) {
+        showError('Failed to start ping: ' + error.message);
+    }
+}
+
+async function stopPing() {
+    try {
+        const response = await fetch('/api/ping/stop', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            showError(result.error);
+        } else {
+            isPingRunning = false;
+            updatePingButtonStates(false);
+            stopPingStream();
+            appendPingResult('Ping stopped', 'info');
+            showError(''); // Clear error
+        }
+    } catch (error) {
+        showError('Failed to stop ping: ' + error.message);
+    }
+}
+
+function startPingStream() {
+    // Close any existing EventSource connection
+    stopPingStream();
+    
+    // Only start if ping is running
+    if (!isPingRunning) {
+        return;
+    }
+    
+    // Create EventSource connection to SSE endpoint
+    pingEventSource = new EventSource('/api/ping/stream');
+    
+    // Handle incoming ping updates
+    pingEventSource.addEventListener('message', (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            appendPingResult(data.line, data.type, data.timestamp);
+        } catch (error) {
+            console.error('Failed to parse ping data:', error);
+        }
+    });
+    
+    // Handle errors
+    pingEventSource.addEventListener('error', (error) => {
+        console.error('Ping stream error:', error);
+        // Check if ping is still running
+        if (!isPingRunning) {
+            // Ping was stopped, close connection
+            stopPingStream();
+        }
+        // EventSource will automatically try to reconnect
+    });
+}
+
+function stopPingStream() {
+    if (pingEventSource) {
+        pingEventSource.close();
+        pingEventSource = null;
+    }
+}
+
+function appendPingResult(line, type, timestamp) {
+    const resultsDiv = document.getElementById('pingResults');
+    if (!resultsDiv) return;
+    
+    const lineDiv = document.createElement('div');
+    lineDiv.className = `ping-result-line ${type}`;
+    
+    const ts = timestamp || new Date().toLocaleTimeString();
+    lineDiv.innerHTML = `<span class="ping-timestamp">[${ts}]</span>${escapeHtml(line)}`;
+    
+    resultsDiv.appendChild(lineDiv);
+    
+    // Auto-scroll to bottom
+    resultsDiv.scrollTop = resultsDiv.scrollHeight;
+}
+
+function clearPingResults() {
+    const resultsDiv = document.getElementById('pingResults');
+    if (resultsDiv) {
+        resultsDiv.innerHTML = '';
+    }
+}
+
+function updatePingButtonStates(isRunning) {
+    const pingBtn = document.getElementById('pingBtn');
+    const pingStopBtn = document.getElementById('pingStopBtn');
+    const pingDomainInput = document.getElementById('pingDomain');
+    
+    if (isRunning) {
+        pingBtn.disabled = true;
+        pingStopBtn.disabled = false;
+        pingDomainInput.disabled = true;
+    } else {
+        pingBtn.disabled = false;
+        pingStopBtn.disabled = true;
+        pingDomainInput.disabled = false;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }

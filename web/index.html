@@ -261,6 +261,72 @@
             background: #10b981;
             transition: width 0.3s;
         }
+
+        .ping-section {
+            margin-top: 20px;
+        }
+
+        .ping-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        input[type="text"] {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            width: 250px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .ping-results {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-top: 10px;
+        }
+
+        .ping-results:empty::before {
+            content: "Ping results will appear here...";
+            color: #64748b;
+            font-style: italic;
+        }
+
+        .ping-result-line {
+            margin-bottom: 4px;
+        }
+
+        .ping-result-line.response {
+            color: #22c55e;
+        }
+
+        .ping-result-line.error {
+            color: #ef4444;
+        }
+
+        .ping-result-line.info {
+            color: #3b82f6;
+        }
+
+        .ping-timestamp {
+            color: #94a3b8;
+            margin-right: 8px;
+        }
     </style>
 </head>
 <body>
@@ -330,6 +396,22 @@
                     <div class="stat-label">Uptime</div>
                     <div class="stat-value" id="uptime">0s</div>
                 </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🏓 Ping Test</h2>
+            <p class="subtitle">Test network connectivity and measure latency</p>
+            
+            <div class="ping-section">
+                <div class="ping-controls">
+                    <label for="pingDomain">Domain:</label>
+                    <input type="text" id="pingDomain" placeholder="e.g., google.com" value="google.com">
+                    <button class="btn-primary" id="pingBtn" onclick="startPing()">Ping</button>
+                    <button class="btn-danger" id="pingStopBtn" onclick="stopPing()" disabled>Stop</button>
+                </div>
+                
+                <div id="pingResults" class="ping-results"></div>
             </div>
         </div>
     </div>

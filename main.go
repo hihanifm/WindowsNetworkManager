@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,9 +9,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +49,12 @@ var (
 	sessionEndTimeMutex sync.RWMutex
 	autoRestartDelayMinutes int64 = 5 // Default 5 minutes
 	autoRestartDelayMutex sync.RWMutex
+	// Ping state
+	pingProcess    *exec.Cmd
+	pingRunning    bool
+	pingDomain     string
+	pingMutex      sync.RWMutex
+	pingOutputChan chan string
 )
 
 type PacketStats struct {
@@ -210,6 +220,9 @@ func main() {
 	http.HandleFunc("/api/upgrade/check", handleUpgradeCheck)
 	http.HandleFunc("/api/upgrade", handleUpgrade)
 	http.HandleFunc("/api/upgrade/status", handleUpgradeStatus)
+	http.HandleFunc("/api/ping/start", handlePingStart)
+	http.HandleFunc("/api/ping/stop", handlePingStop)
+	http.HandleFunc("/api/ping/stream", handlePingStream)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
@@ -1053,4 +1066,332 @@ func getCompiledVersion() string {
 	log.Printf("[VERSION] Compiled version in binary: %s", compiledVer)
 	
 	return compiledVer
+}
+
+// PingResponse represents a ping result line
+type PingResponse struct {
+	Timestamp string `json:"timestamp"`
+	Line      string `json:"line"`
+	Type      string `json:"type"` // "response", "error", "info"
+}
+
+func handlePingStart(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Domain string `json:"domain"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[ERROR] Invalid ping start request: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Invalid request",
+		})
+		return
+	}
+
+	domain := strings.TrimSpace(req.Domain)
+	if domain == "" {
+		log.Printf("[ERROR] Empty domain in ping start request")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Domain is required",
+		})
+		return
+	}
+
+	// Basic domain validation
+	if len(domain) > 255 {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Domain name too long",
+		})
+		return
+	}
+
+	pingMutex.Lock()
+	if pingRunning {
+		pingMutex.Unlock()
+		log.Printf("[ERROR] Ping is already running")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Ping is already running",
+		})
+		return
+	}
+	pingRunning = true
+	pingDomain = domain
+	pingMutex.Unlock()
+
+	log.Printf("[HTTP] POST /api/ping/start - Starting ping to %s", domain)
+
+	// Create output channel for ping results
+	pingOutputChan = make(chan string, 100)
+
+	// Start ping command (Windows: ping -t <domain> for continuous ping)
+	cmd := exec.Command("ping", "-t", domain)
+	
+	// Capture stdout
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		pingMutex.Lock()
+		pingRunning = false
+		pingMutex.Unlock()
+		log.Printf("[ERROR] Failed to create stdout pipe: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": fmt.Sprintf("Failed to start ping: %v", err),
+		})
+		return
+	}
+
+	// Capture stderr
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		pingMutex.Lock()
+		pingRunning = false
+		pingMutex.Unlock()
+		log.Printf("[ERROR] Failed to create stderr pipe: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": fmt.Sprintf("Failed to start ping: %v", err),
+		})
+		return
+	}
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		pingMutex.Lock()
+		pingRunning = false
+		pingMutex.Unlock()
+		log.Printf("[ERROR] Failed to start ping command: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": fmt.Sprintf("Failed to start ping: %v", err),
+		})
+		return
+	}
+
+	pingMutex.Lock()
+	pingProcess = cmd
+	pingMutex.Unlock()
+
+	// Read stdout and send to channel
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			select {
+			case pingOutputChan <- line:
+			default:
+				// Channel full, skip this line
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			log.Printf("[ERROR] Error reading ping stdout: %v", err)
+		}
+	}()
+
+	// Read stderr and send to channel
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			select {
+			case pingOutputChan <- line:
+			default:
+				// Channel full, skip this line
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			log.Printf("[ERROR] Error reading ping stderr: %v", err)
+		}
+	}()
+
+	// Wait for command to finish in background
+	go func() {
+		err := cmd.Wait()
+		pingMutex.Lock()
+		pingRunning = false
+		if err != nil {
+			log.Printf("[INFO] Ping command finished with error: %v", err)
+		} else {
+			log.Printf("[INFO] Ping command finished")
+		}
+		pingMutex.Unlock()
+		close(pingOutputChan)
+	}()
+
+	log.Printf("[INFO] Ping started successfully to %s", domain)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"domain":  domain,
+	})
+}
+
+func handlePingStop(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Printf("[HTTP] POST /api/ping/stop - Stopping ping")
+
+	pingMutex.Lock()
+	if !pingRunning {
+		pingMutex.Unlock()
+		log.Printf("[ERROR] Ping is not running")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Ping is not running",
+		})
+		return
+	}
+
+	cmd := pingProcess
+	pingMutex.Unlock()
+
+	if cmd != nil && cmd.Process != nil {
+		// Kill the ping process
+		if err := cmd.Process.Kill(); err != nil {
+			log.Printf("[ERROR] Failed to kill ping process: %v", err)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": fmt.Sprintf("Failed to stop ping: %v", err),
+			})
+			return
+		}
+		log.Printf("[INFO] Ping process killed")
+	}
+
+	pingMutex.Lock()
+	pingRunning = false
+	pingProcess = nil
+	if pingOutputChan != nil {
+		close(pingOutputChan)
+		pingOutputChan = nil
+	}
+	pingMutex.Unlock()
+
+	log.Printf("[INFO] Ping stopped successfully")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+func handlePingStream(w http.ResponseWriter, r *http.Request) {
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	// Flush headers immediately
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+	flusher.Flush()
+
+	// Create a channel to handle client disconnection
+	ctx := r.Context()
+
+	// Regex patterns for parsing ping output
+	pingReplyPattern := regexp.MustCompile(`Reply from .+?: bytes=\d+ time=(\d+)ms TTL=\d+`)
+	pingErrorPattern := regexp.MustCompile(`(Request timed out|Destination host unreachable|Ping request could not find host|TTL expired|General failure)`)
+	pingInfoPattern := regexp.MustCompile(`(Pinging|Ping statistics|Packets:|Approximate round trip times)`)
+	
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastChannel chan string
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Client disconnected
+			return
+		case <-ticker.C:
+			// Check if ping is running and get channel
+			pingMutex.RLock()
+			running := pingRunning
+			outputChan := pingOutputChan
+			pingMutex.RUnlock()
+
+			if !running || outputChan == nil {
+				// Ping not running, reset channel reference and continue polling
+				lastChannel = nil
+				continue
+			}
+
+			// If channel changed (new ping started), update reference
+			if lastChannel != outputChan {
+				lastChannel = outputChan
+			}
+
+			// Read available lines from channel (non-blocking)
+			for {
+				select {
+				case line, ok := <-outputChan:
+					if !ok {
+						// Channel closed, ping stopped
+						pingMutex.RLock()
+						stillRunning := pingRunning
+						pingMutex.RUnlock()
+						
+						if !stillRunning {
+							// Send final message
+							response := PingResponse{
+								Timestamp: time.Now().Format("15:04:05"),
+								Line:      "Ping stopped",
+								Type:      "info",
+							}
+							jsonData, _ := json.Marshal(response)
+							fmt.Fprintf(w, "data: %s\n\n", jsonData)
+							flusher.Flush()
+						}
+						// Channel closed, reset reference and break out of inner loop
+						lastChannel = nil
+						goto continueLoop
+					}
+					
+					// Parse and format the line
+					lineType := "info"
+					trimmedLine := strings.TrimSpace(line)
+					
+					if trimmedLine == "" {
+						continue
+					}
+					
+					if pingReplyPattern.MatchString(trimmedLine) {
+						lineType = "response"
+					} else if pingErrorPattern.MatchString(trimmedLine) {
+						lineType = "error"
+					} else if pingInfoPattern.MatchString(trimmedLine) {
+						lineType = "info"
+					}
+					
+					response := PingResponse{
+						Timestamp: time.Now().Format("15:04:05"),
+						Line:      trimmedLine,
+						Type:      lineType,
+					}
+					
+					jsonData, err := json.Marshal(response)
+					if err != nil {
+						log.Printf("[ERROR] Failed to marshal ping response: %v", err)
+						continue
+					}
+					
+					// Send SSE formatted data
+					fmt.Fprintf(w, "data: %s\n\n", jsonData)
+					flusher.Flush()
+				default:
+					// No more data available right now
+					goto continueLoop
+				}
+			}
+		continueLoop:
+		}
+	}
 }
