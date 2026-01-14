@@ -12,6 +12,48 @@ window.addEventListener('DOMContentLoaded', () => {
     loadSchedule();
     loadLogs();
     // Don't start stats updates yet - wait for config to load
+    
+    // Attach event listeners to buttons (more reliable than inline onclick)
+    const refreshBtn = document.getElementById('refreshLogsBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('Refresh button clicked via event listener');
+            if (typeof refreshLogs === 'function') {
+                refreshLogs();
+            } else {
+                console.error('refreshLogs function not found');
+                alert('Error: refreshLogs function not loaded. Please refresh the page.');
+            }
+        });
+    }
+    
+    // Attach event listeners to ping buttons
+    const pingBtn = document.getElementById('pingBtn');
+    if (pingBtn) {
+        pingBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (typeof startPing === 'function') {
+                startPing();
+            } else {
+                console.error('startPing function not found');
+                alert('Error: startPing function not loaded. Please refresh the page.');
+            }
+        });
+    }
+    
+    const pingStopBtn = document.getElementById('pingStopBtn');
+    if (pingStopBtn) {
+        pingStopBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (typeof stopPing === 'function') {
+                stopPing();
+            } else {
+                console.error('stopPing function not found');
+                alert('Error: stopPing function not loaded. Please refresh the page.');
+            }
+        });
+    }
 });
 
 async function loadConfig() {
@@ -785,17 +827,36 @@ function updateScheduleStatus(schedule) {
 async function loadLogs() {
     const logsContainer = document.getElementById('logsContainer');
     const logsError = document.getElementById('logsError');
+    const refreshBtn = document.getElementById('refreshLogsBtn');
     
-    if (!logsContainer) return;
+    if (!logsContainer) {
+        console.error('Logs container not found');
+        return;
+    }
+    
+    // Show loading state
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Loading...';
+    }
+    
+    // Show loading message in container
+    logsContainer.innerHTML = '<div style="color: #64748b; font-style: italic;">Loading logs...</div>';
+    logsError.style.display = 'none';
     
     try {
         const response = await fetch('/api/logs?count=50');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const result = await response.json();
         
         if (result.error) {
             logsError.textContent = result.error;
             logsError.style.display = 'block';
-            logsContainer.innerHTML = '';
+            logsContainer.innerHTML = '<div style="color: #64748b; font-style: italic;">Error loading logs. See error message below.</div>';
         } else {
             logsError.style.display = 'none';
             renderLogs(result.entries || []);
@@ -803,14 +864,31 @@ async function loadLogs() {
     } catch (error) {
         logsError.textContent = 'Failed to load logs: ' + error.message;
         logsError.style.display = 'block';
-        logsContainer.innerHTML = '';
+        logsContainer.innerHTML = '<div style="color: #ef4444; font-style: italic;">Failed to load logs. Check console for details.</div>';
         console.error('Failed to load logs:', error);
+    } finally {
+        // Restore button state
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = 'Refresh';
+        }
     }
 }
 
 function refreshLogs() {
-    loadLogs();
+    console.log('Refresh logs clicked');
+    try {
+        loadLogs();
+    } catch (error) {
+        console.error('Error in refreshLogs:', error);
+        const logsError = document.getElementById('logsError');
+        if (logsError) {
+            logsError.textContent = 'Error refreshing logs: ' + error.message;
+            logsError.style.display = 'block';
+        }
+    }
 }
+
 
 function renderLogs(entries) {
     const logsContainer = document.getElementById('logsContainer');
@@ -841,3 +919,23 @@ function renderLogs(entries) {
     // Auto-scroll to bottom (newest entries)
     logsContainer.scrollTop = logsContainer.scrollHeight;
 }
+
+// Ensure all functions are globally accessible for inline onclick handlers
+// This must be done after all functions are defined
+(function() {
+    'use strict';
+    try {
+        window.refreshLogs = refreshLogs;
+        window.loadLogs = loadLogs;
+        window.startPing = startPing;
+        window.stopPing = stopPing;
+        console.log('Functions registered globally:', {
+            refreshLogs: typeof window.refreshLogs,
+            loadLogs: typeof window.loadLogs,
+            startPing: typeof window.startPing,
+            stopPing: typeof window.stopPing
+        });
+    } catch (error) {
+        console.error('Error registering global functions:', error);
+    }
+})();

@@ -557,7 +557,7 @@
             
             <div class="logs-section">
                 <div class="logs-controls">
-                    <button class="btn-primary" onclick="refreshLogs()">Refresh</button>
+                    <button class="btn-primary" id="refreshLogsBtn">Refresh</button>
                 </div>
                 
                 <div id="logsContainer" class="logs-container"></div>
@@ -573,8 +573,8 @@
                 <div class="ping-controls">
                     <label for="pingDomain">Domain:</label>
                     <input type="text" id="pingDomain" placeholder="e.g., google.com" value="google.com">
-                    <button class="btn-primary" id="pingBtn" onclick="startPing()">Ping</button>
-                    <button class="btn-danger" id="pingStopBtn" onclick="stopPing()" disabled>Stop</button>
+                    <button class="btn-primary" id="pingBtn">Ping</button>
+                    <button class="btn-danger" id="pingStopBtn" disabled>Stop</button>
                 </div>
                 
                 <div id="pingResults" class="ping-results"></div>
