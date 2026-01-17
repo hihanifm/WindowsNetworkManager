@@ -679,6 +679,7 @@ async function loadSchedule() {
         document.getElementById('scheduleStartTime').value = schedule.start_time || '09:00';
         document.getElementById('scheduleEndTime').value = schedule.end_time || '18:00';
         document.getElementById('scheduleMaxDelay').value = schedule.max_delay_ms || 1000;
+        document.getElementById('scheduleMaxSessionsPerHour').value = schedule.max_sessions_per_hour || 6;
         
         // Set day checkboxes
         if (schedule.days && Array.isArray(schedule.days)) {
@@ -710,6 +711,7 @@ async function saveSchedule() {
         const startTime = document.getElementById('scheduleStartTime').value;
         const endTime = document.getElementById('scheduleEndTime').value;
         const maxDelayMs = parseInt(document.getElementById('scheduleMaxDelay').value);
+        const maxSessionsPerHour = parseInt(document.getElementById('scheduleMaxSessionsPerHour').value);
         
         // Get selected days
         const days = [];
@@ -730,12 +732,18 @@ async function saveSchedule() {
             return;
         }
         
+        if (isNaN(maxSessionsPerHour) || maxSessionsPerHour < 2 || maxSessionsPerHour > 60) {
+            showError('Max sessions per hour must be between 2 and 60');
+            return;
+        }
+        
         const schedule = {
             enabled: enabled,
             days: days,
             start_time: startTime,
             end_time: endTime,
-            max_delay_ms: maxDelayMs
+            max_delay_ms: maxDelayMs,
+            max_sessions_per_hour: maxSessionsPerHour
         };
         
         const response = await fetch('/api/schedule', {

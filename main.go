@@ -750,6 +750,11 @@ func handleSchedule(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if req.MaxSessionsPerHour < 2 || req.MaxSessionsPerHour > 60 {
+			http.Error(w, `{"error": "Max sessions per hour must be between 2 and 60"}`, http.StatusBadRequest)
+			return
+		}
+
 		if len(req.Days) == 0 {
 			http.Error(w, `{"error": "At least one day must be selected"}`, http.StatusBadRequest)
 			return
@@ -772,8 +777,8 @@ func handleSchedule(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf("[HTTP] POST /api/schedule - Updated schedule: enabled=%v, days=%v, time=%s-%s, max_delay=%dms",
-			req.Enabled, req.Days, req.StartTime, req.EndTime, req.MaxDelayMs)
+		log.Printf("[HTTP] POST /api/schedule - Updated schedule: enabled=%v, days=%v, time=%s-%s, max_delay=%dms, max_sessions_per_hour=%d",
+			req.Enabled, req.Days, req.StartTime, req.EndTime, req.MaxDelayMs, req.MaxSessionsPerHour)
 
 		json.NewEncoder(w).Encode(req)
 

@@ -13,11 +13,12 @@ import (
 
 // ScheduleConfig represents the schedule configuration
 type ScheduleConfig struct {
-	Enabled    bool     `json:"enabled"`
-	Days       []int    `json:"days"`        // 0=Sunday, 1=Monday, ..., 6=Saturday
-	StartTime  string   `json:"start_time"`  // Format: "HH:MM" (24-hour)
-	EndTime    string   `json:"end_time"`    // Format: "HH:MM" (24-hour)
-	MaxDelayMs int64    `json:"max_delay_ms"` // Max delay for sessions
+	Enabled          bool   `json:"enabled"`
+	Days             []int  `json:"days"`                  // 0=Sunday, 1=Monday, ..., 6=Saturday
+	StartTime        string `json:"start_time"`            // Format: "HH:MM" (24-hour)
+	EndTime          string `json:"end_time"`              // Format: "HH:MM" (24-hour)
+	MaxDelayMs       int64  `json:"max_delay_ms"`          // Max delay for sessions
+	MaxSessionsPerHour int  `json:"max_sessions_per_hour"` // Max number of sessions per hour
 }
 
 // Session represents a scheduled disruption session
@@ -52,11 +53,12 @@ func NewScheduler() *Scheduler {
 	return &Scheduler{
 		stopChan: make(chan struct{}),
 		config: ScheduleConfig{
-			Enabled:    false,
-			Days:       []int{1, 2, 3, 4, 5}, // Monday-Friday
-			StartTime:  "09:00",
-			EndTime:    "18:00",
-			MaxDelayMs: 1000,
+			Enabled:            false,
+			Days:               []int{1, 2, 3, 4, 5}, // Monday-Friday
+			StartTime:          "09:00",
+			EndTime:            "18:00",
+			MaxDelayMs:         1000,
+			MaxSessionsPerHour: 6,
 		},
 	}
 }
@@ -86,8 +88,8 @@ func (s *Scheduler) LoadConfig() error {
 	s.config = config
 	s.configMutex.Unlock()
 
-	log.Printf("[SCHEDULE] Loaded schedule config: enabled=%v, days=%v, time=%s-%s, max_delay=%dms",
-		config.Enabled, config.Days, config.StartTime, config.EndTime, config.MaxDelayMs)
+	log.Printf("[SCHEDULE] Loaded schedule config: enabled=%v, days=%v, time=%s-%s, max_delay=%dms, max_sessions_per_hour=%d",
+		config.Enabled, config.Days, config.StartTime, config.EndTime, config.MaxDelayMs, config.MaxSessionsPerHour)
 	return nil
 }
 
@@ -111,8 +113,8 @@ func (s *Scheduler) SaveConfig() error {
 		return fmt.Errorf("failed to write schedule config: %v", err)
 	}
 
-	log.Printf("[SCHEDULE] Saved schedule config: enabled=%v, days=%v, time=%s-%s, max_delay=%dms",
-		config.Enabled, config.Days, config.StartTime, config.EndTime, config.MaxDelayMs)
+	log.Printf("[SCHEDULE] Saved schedule config: enabled=%v, days=%v, time=%s-%s, max_delay=%dms, max_sessions_per_hour=%d",
+		config.Enabled, config.Days, config.StartTime, config.EndTime, config.MaxDelayMs, config.MaxSessionsPerHour)
 	return nil
 }
 
@@ -201,10 +203,27 @@ func (s *Scheduler) IsWithinSchedule(now time.Time) bool {
 	return (now.After(startTime) || now.Equal(startTime)) && (now.Before(endTime) || now.Equal(endTime))
 }
 
-// planSessionsForHour plans 3-6 random disruption sessions for the given hour
+// planSessionsForHour plans random disruption sessions for the given hour
 func (s *Scheduler) planSessionsForHour(hourStart time.Time) []Session {
-	// Random number of sessions between 3 and 6
-	numSessions := rand.Intn(4) + 3 // 3-6 sessions
+	// Get max sessions per hour from config
+	s.configMutex.RLock()
+	maxSessionsPerHour := s.config.MaxSessionsPerHour
+	s.configMutex.RUnlock()
+
+	// Default to 6 if not set (for backward compatibility)
+	if maxSessionsPerHour <= 0 {
+		maxSessionsPerHour = 6
+	}
+
+	// Calculate min sessions as 50% of max (integer division)
+	minSessions := maxSessionsPerHour / 2
+	if minSessions < 1 {
+		minSessions = 1
+	}
+
+	// Random number of sessions between min (50% of max) and max
+	// Example: if max=10, min=5, then range is rand.Intn(6)+5 = 5-10
+	numSessions := rand.Intn(maxSessionsPerHour-minSessions+1) + minSessions
 
 	sessions := make([]Session, 0, numSessions)
 	hourEnd := hourStart.Add(1 * time.Hour)
