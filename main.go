@@ -734,7 +734,23 @@ func handleSchedule(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		config := scheduler.GetConfig()
-		json.NewEncoder(w).Encode(config)
+		status := scheduler.GetScheduleStatus()
+		
+		// Combine config and status in response
+		response := make(map[string]interface{})
+		configJSON, _ := json.Marshal(config)
+		json.Unmarshal(configJSON, &response)
+		
+		// Add status fields
+		if status.NextSessionTime != nil {
+			response["next_session_time"] = status.NextSessionTime.Format(time.RFC3339)
+			response["next_session_time_local"] = status.NextSessionTime.Format("15:04:05")
+		}
+		response["sessions_completed"] = status.SessionsCompleted
+		response["is_within_schedule"] = status.IsWithinSchedule
+		response["has_active_session"] = status.HasActiveSession
+		
+		json.NewEncoder(w).Encode(response)
 
 	case "POST":
 		var req ScheduleConfig

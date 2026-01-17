@@ -29,13 +29,19 @@ type Session struct {
 
 // Scheduler manages scheduled disruptions
 type Scheduler struct {
-	config       ScheduleConfig
-	configMutex  sync.RWMutex
-	stopChan     chan struct{}
-	running      bool
-	runningMutex sync.RWMutex
-	activeSession *Session
-	sessionMutex sync.RWMutex
+	config         ScheduleConfig
+	configMutex    sync.RWMutex
+	stopChan       chan struct{}
+	running        bool
+	runningMutex   sync.RWMutex
+	activeSession  *Session
+	sessionMutex   sync.RWMutex
+	plannedSessions []Session
+	plannedSessionsMutex sync.RWMutex
+	sessionsCompleted int
+	sessionsCompletedMutex sync.RWMutex
+	currentHour    time.Time
+	currentHourMutex sync.RWMutex
 }
 
 // getScheduleFilePath returns the path to the schedule config file
@@ -298,6 +304,19 @@ func (s *Scheduler) Stop() {
 	s.activeSession = nil
 	s.sessionMutex.Unlock()
 
+	// Clear planned sessions and reset counters
+	s.plannedSessionsMutex.Lock()
+	s.plannedSessions = nil
+	s.plannedSessionsMutex.Unlock()
+
+	s.sessionsCompletedMutex.Lock()
+	s.sessionsCompleted = 0
+	s.sessionsCompletedMutex.Unlock()
+
+	s.currentHourMutex.Lock()
+	s.currentHour = time.Time{}
+	s.currentHourMutex.Unlock()
+
 	// Reset delay
 	delayMutex.Lock()
 	currentDelay = 0
@@ -314,6 +333,51 @@ func (s *Scheduler) IsRunning() bool {
 	s.runningMutex.RLock()
 	defer s.runningMutex.RUnlock()
 	return s.running
+}
+
+// ScheduleStatus represents the current status of the scheduler
+type ScheduleStatus struct {
+	NextSessionTime    *time.Time `json:"next_session_time,omitempty"`
+	SessionsCompleted  int        `json:"sessions_completed"`
+	IsWithinSchedule   bool       `json:"is_within_schedule"`
+	HasActiveSession   bool       `json:"has_active_session"`
+}
+
+// GetScheduleStatus returns the current status including next session time and completed count
+func (s *Scheduler) GetScheduleStatus() ScheduleStatus {
+	now := time.Now()
+	
+	s.plannedSessionsMutex.RLock()
+	plannedSessions := s.plannedSessions
+	s.plannedSessionsMutex.RUnlock()
+	
+	s.sessionsCompletedMutex.RLock()
+	sessionsCompleted := s.sessionsCompleted
+	s.sessionsCompletedMutex.RUnlock()
+	
+	s.sessionMutex.RLock()
+	hasActiveSession := s.activeSession != nil
+	s.sessionMutex.RUnlock()
+	
+	isWithinSchedule := s.IsWithinSchedule(now)
+	
+	// Find next session from planned sessions
+	var nextSessionTime *time.Time
+	if isWithinSchedule && len(plannedSessions) > 0 {
+		for _, session := range plannedSessions {
+			if session.StartTime.After(now) {
+				nextSessionTime = &session.StartTime
+				break
+			}
+		}
+	}
+	
+	return ScheduleStatus{
+		NextSessionTime:   nextSessionTime,
+		SessionsCompleted: sessionsCompleted,
+		IsWithinSchedule:  isWithinSchedule,
+		HasActiveSession:  hasActiveSession,
+	}
 }
 
 // run is the main scheduler loop
@@ -350,6 +414,12 @@ func (s *Scheduler) run() {
 					log.Printf("[SCHEDULE] Outside schedule, stopped active session")
 				}
 				plannedSessions = nil
+				
+				// Clear planned sessions when outside schedule
+				s.plannedSessionsMutex.Lock()
+				s.plannedSessions = nil
+				s.plannedSessionsMutex.Unlock()
+				
 				continue
 			}
 
@@ -359,6 +429,20 @@ func (s *Scheduler) run() {
 				plannedSessions = s.planSessionsForHour(currentHourStart)
 				currentHour = currentHourStart
 				sessionIndex = 0
+				
+				// Store planned sessions and reset completed count for new hour
+				s.plannedSessionsMutex.Lock()
+				s.plannedSessions = plannedSessions
+				s.plannedSessionsMutex.Unlock()
+				
+				s.currentHourMutex.Lock()
+				s.currentHour = currentHourStart
+				s.currentHourMutex.Unlock()
+				
+				s.sessionsCompletedMutex.Lock()
+				s.sessionsCompleted = 0
+				s.sessionsCompletedMutex.Unlock()
+				
 				log.Printf("[SCHEDULE] Planned %d sessions for hour starting at %s", len(plannedSessions), currentHourStart.Format("15:04"))
 			}
 
@@ -392,6 +476,7 @@ func (s *Scheduler) run() {
 						break
 					} else {
 						// Session has ended, move to next
+						// Don't increment here - the active session check below handles completed sessions
 						sessionIndex++
 					}
 				} else {
@@ -417,7 +502,14 @@ func (s *Scheduler) run() {
 				if packetEngine != nil {
 					packetEngine.SetDelay(0)
 				}
-				log.Printf("[SCHEDULE] Session ended")
+				
+				// Increment completed count
+				s.sessionsCompletedMutex.Lock()
+				s.sessionsCompleted++
+				completedCount := s.sessionsCompleted
+				s.sessionsCompletedMutex.Unlock()
+				
+				log.Printf("[SCHEDULE] Session ended (completed: %d)", completedCount)
 				sessionIndex++
 			}
 		}
