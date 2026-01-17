@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"math/rand"
@@ -21,13 +22,16 @@ func contains(s, substr string) bool {
 
 // PacketEngine handles packet interception and delay
 type PacketEngine struct {
-	handle          *godivert.WinDivertHandle
-	delay           time.Duration
-	delayMutex      sync.RWMutex
-	randomDelay     bool
-	randomDelayMutex sync.RWMutex
-	stopChan        chan struct{}
-	wg              sync.WaitGroup
+	handle              *godivert.WinDivertHandle
+	delay               time.Duration
+	delayMutex          sync.RWMutex
+	randomDelay         bool
+	randomDelayMutex    sync.RWMutex
+	filteredDomains     []string
+	domainFilterEnabled bool
+	domainFilterMutex   sync.RWMutex
+	stopChan            chan struct{}
+	wg                  sync.WaitGroup
 }
 
 // initWinDivertDLL initializes the WinDivert DLL by loading it from the executable directory
@@ -312,7 +316,22 @@ func (pe *PacketEngine) processPackets() {
 			delay := pe.GetDelay()
 			useRandomDelay := pe.GetRandomDelay()
 
+			// Check if packet should be delayed based on domain filter
+			shouldDelay := true
 			if delay > 0 {
+				// If domain filtering is enabled, check if packet matches
+				pe.domainFilterMutex.RLock()
+				filterEnabled := pe.domainFilterEnabled
+				pe.domainFilterMutex.RUnlock()
+				
+				if filterEnabled {
+					// Only delay if packet matches filtered domains
+					shouldDelay = pe.matchesDomainFilter(packet)
+				}
+				// If domain filtering is disabled, delay all packets (backward compatible)
+			}
+
+			if delay > 0 && shouldDelay {
 				// Calculate actual delay to apply
 				actualDelay := delay
 				if useRandomDelay {
@@ -339,7 +358,7 @@ func (pe *PacketEngine) processPackets() {
 					pe.sendPacket(packet)
 				}
 			} else {
-				// No delay, send immediately
+				// No delay or packet doesn't match filter, send immediately
 				pe.sendPacket(packet)
 			}
 		}
@@ -366,4 +385,300 @@ func (pe *PacketEngine) sendPacket(packet *godivert.Packet) {
 
 	// Update statistics
 	updateStats(1, packetLen)
+}
+
+// SetDomainFilter updates the domain filter settings
+func (pe *PacketEngine) SetDomainFilter(domains []string, enabled bool) {
+	pe.domainFilterMutex.Lock()
+	defer pe.domainFilterMutex.Unlock()
+	
+	// Normalize domains to lowercase for case-insensitive matching
+	pe.filteredDomains = make([]string, len(domains))
+	for i, domain := range domains {
+		pe.filteredDomains[i] = strings.ToLower(strings.TrimSpace(domain))
+	}
+	pe.domainFilterEnabled = enabled
+	log.Printf("[DOMAIN_FILTER] Updated: enabled=%v, domains=%v", enabled, pe.filteredDomains)
+}
+
+// GetDomainFilter returns the current domain filter settings
+func (pe *PacketEngine) GetDomainFilter() ([]string, bool) {
+	pe.domainFilterMutex.RLock()
+	defer pe.domainFilterMutex.RUnlock()
+	
+	domains := make([]string, len(pe.filteredDomains))
+	copy(domains, pe.filteredDomains)
+	return domains, pe.domainFilterEnabled
+}
+
+// extractHTTPHost extracts the Host header from HTTP request in TCP payload
+func extractHTTPHost(packet *godivert.Packet) string {
+	// Parse headers to get IP and TCP info
+	packet.ParseHeaders()
+	
+	// Check if it's TCP
+	if packet.NextHeaderType() != 6 { // TCP protocol number
+		return ""
+	}
+	
+	// Get destination port
+	dstPort, err := packet.DstPort()
+	if err != nil || dstPort != 80 {
+		return ""
+	}
+	
+	// Calculate payload offset: IP header + TCP header
+	ipVersion := packet.IpVersion()
+	var ipHeaderLen int
+	if ipVersion == 4 {
+		if len(packet.Raw) < 20 {
+			return ""
+		}
+		ipHeaderLen = int((packet.Raw[0] & 0xf) << 2)
+	} else {
+		ipHeaderLen = 40 // IPv6 header length
+	}
+	
+	if len(packet.Raw) <= ipHeaderLen+20 {
+		return ""
+	}
+	
+	// Get TCP header length
+	tcpHeaderLen := int((packet.Raw[ipHeaderLen+12] >> 4) * 4)
+	payloadOffset := ipHeaderLen + tcpHeaderLen
+	
+	if len(packet.Raw) <= payloadOffset {
+		return ""
+	}
+	
+	payload := packet.Raw[payloadOffset:]
+	
+	// Look for HTTP Host header: "\r\nHost: " or "Host: " at start
+	hostPattern := []byte("\r\nHost: ")
+	hostPatternAlt := []byte("Host: ")
+	
+	var hostStart int = -1
+	if len(payload) >= len(hostPatternAlt) && string(payload[:len(hostPatternAlt)]) == "Host: " {
+		hostStart = len(hostPatternAlt)
+	} else {
+		// Search for Host header
+		for i := 0; i <= len(payload)-len(hostPattern); i++ {
+			if string(payload[i:i+len(hostPattern)]) == "\r\nHost: " {
+				hostStart = i + len(hostPattern)
+				break
+			}
+		}
+	}
+	
+	if hostStart == -1 {
+		return ""
+	}
+	
+	// Extract hostname until \r\n or space
+	hostEnd := len(payload)
+	for i := hostStart; i < len(payload); i++ {
+		if payload[i] == '\r' || payload[i] == '\n' || payload[i] == ' ' || payload[i] == ':' {
+			hostEnd = i
+			break
+		}
+	}
+	
+	if hostEnd <= hostStart {
+		return ""
+	}
+	
+	hostname := string(payload[hostStart:hostEnd])
+	return strings.TrimSpace(strings.ToLower(hostname))
+}
+
+// extractTLSSNI extracts the Server Name Indication from TLS ClientHello
+func extractTLSSNI(packet *godivert.Packet) string {
+	// Parse headers
+	packet.ParseHeaders()
+	
+	// Check if it's TCP
+	if packet.NextHeaderType() != 6 { // TCP protocol number
+		return ""
+	}
+	
+	// Get destination port
+	dstPort, err := packet.DstPort()
+	if err != nil || dstPort != 443 {
+		return ""
+	}
+	
+	// Calculate payload offset
+	ipVersion := packet.IpVersion()
+	var ipHeaderLen int
+	if ipVersion == 4 {
+		if len(packet.Raw) < 20 {
+			return ""
+		}
+		ipHeaderLen = int((packet.Raw[0] & 0xf) << 2)
+	} else {
+		ipHeaderLen = 40
+	}
+	
+	if len(packet.Raw) <= ipHeaderLen+20 {
+		return ""
+	}
+	
+	// Get TCP header length
+	tcpHeaderLen := int((packet.Raw[ipHeaderLen+12] >> 4) * 4)
+	payloadOffset := ipHeaderLen + tcpHeaderLen
+	
+	if len(packet.Raw) <= payloadOffset+5 {
+		return ""
+	}
+	
+	payload := packet.Raw[payloadOffset:]
+	
+	// Check TLS handshake: Content Type = 0x16 (Handshake)
+	if len(payload) < 5 || payload[0] != 0x16 {
+		return ""
+	}
+	
+	// Check TLS version (0x0301 or 0x0303)
+	version := binary.BigEndian.Uint16(payload[1:3])
+	if version != 0x0301 && version != 0x0303 {
+		return ""
+	}
+	
+	// Get handshake length
+	handshakeLen := int(binary.BigEndian.Uint16(payload[3:5]))
+	
+	// Check if we have enough data
+	if len(payload) < 5+handshakeLen || handshakeLen < 4 {
+		return ""
+	}
+	
+	// Check handshake type (should be ClientHello = 0x01)
+	if payload[5] != 0x01 {
+		return ""
+	}
+	
+	// Skip handshake header (type + 3 bytes length + version + random + session_id)
+	offset := 5 + 4 + 2 + 32 // handshake header + version + random
+	
+	// Session ID length
+	if len(payload) <= offset {
+		return ""
+	}
+	sessionIDLen := int(payload[offset])
+	offset += 1 + sessionIDLen
+	
+	// Cipher suites length
+	if len(payload) <= offset+2 {
+		return ""
+	}
+	cipherSuitesLen := int(binary.BigEndian.Uint16(payload[offset : offset+2]))
+	offset += 2 + cipherSuitesLen
+	
+	// Compression methods length
+	if len(payload) <= offset {
+		return ""
+	}
+	compressionMethodsLen := int(payload[offset])
+	offset += 1 + compressionMethodsLen
+	
+	// Extensions length
+	if len(payload) <= offset+2 {
+		return ""
+	}
+	extensionsLen := int(binary.BigEndian.Uint16(payload[offset : offset+2]))
+	offset += 2
+	
+	// Search for SNI extension (type 0x0000)
+	extensionsEnd := offset + extensionsLen
+	for offset+4 <= extensionsEnd {
+		extType := binary.BigEndian.Uint16(payload[offset : offset+2])
+		extLen := int(binary.BigEndian.Uint16(payload[offset+2 : offset+4]))
+		offset += 4
+		
+		if extType == 0x0000 { // SNI extension
+			if len(payload) <= offset+2 {
+				return ""
+			}
+			// Server name list length (skip it)
+			offset += 2
+			
+			if len(payload) <= offset+3 {
+				return ""
+			}
+			// Name type (should be 0x00 for hostname)
+			nameType := payload[offset]
+			if nameType != 0x00 {
+				return ""
+			}
+			offset += 1
+			
+			// Hostname length
+			hostnameLen := int(binary.BigEndian.Uint16(payload[offset : offset+2]))
+			offset += 2
+			
+			if len(payload) <= offset+hostnameLen {
+				return ""
+			}
+			
+			// Extract hostname
+			hostname := string(payload[offset : offset+hostnameLen])
+			return strings.ToLower(hostname)
+		}
+		
+		offset += extLen
+	}
+	
+	return ""
+}
+
+// matchesDomainFilter checks if a packet matches any of the filtered domains
+func (pe *PacketEngine) matchesDomainFilter(packet *godivert.Packet) bool {
+	pe.domainFilterMutex.RLock()
+	enabled := pe.domainFilterEnabled
+	domains := pe.filteredDomains
+	pe.domainFilterMutex.RUnlock()
+	
+	// If domain filtering is disabled, match all packets (backward compatible)
+	if !enabled || len(domains) == 0 {
+		return true
+	}
+	
+	// Try to extract domain from packet
+	var domain string
+	
+	// Check destination port to determine protocol
+	dstPort, err := packet.DstPort()
+	if err != nil {
+		return false
+	}
+	
+	switch dstPort {
+	case 80:
+		// HTTP - extract Host header
+		domain = extractHTTPHost(packet)
+	case 443:
+		// HTTPS - extract TLS SNI
+		domain = extractTLSSNI(packet)
+	default:
+		// For other ports, we can't easily extract domain
+		// Could potentially check destination IP against resolved domain IPs
+		// For now, don't match (don't delay)
+		return false
+	}
+	
+	if domain == "" {
+		return false
+	}
+	
+	// Check if domain matches any filtered domain (substring match, case-insensitive)
+	domainLower := strings.ToLower(domain)
+	for _, filterDomain := range domains {
+		filterDomain = strings.ToLower(strings.TrimSpace(filterDomain))
+		if strings.Contains(domainLower, filterDomain) || strings.Contains(filterDomain, domainLower) {
+			log.Printf("[DOMAIN_FILTER] Packet matched domain: %s (filter: %s)", domain, filterDomain)
+			return true
+		}
+	}
+	
+	return false
 }

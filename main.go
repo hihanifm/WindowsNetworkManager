@@ -57,6 +57,10 @@ var (
 	pingDomain     string
 	pingMutex      sync.RWMutex
 	pingOutputChan chan string
+	// Domain filter state
+	filteredDomains    []string
+	domainFilterMutex  sync.RWMutex
+	domainFilterEnabled bool
 )
 
 type PacketStats struct {
@@ -67,21 +71,25 @@ type PacketStats struct {
 }
 
 type ConfigResponse struct {
-	DelayMs                 int64   `json:"delay_ms"`
-	RandomDelay             bool    `json:"random_delay"`
-	IsRunning               bool    `json:"is_running"`
-	DurationMinutes         int64   `json:"duration_minutes,omitempty"`
-	RemainingMinutes        float64 `json:"remaining_minutes,omitempty"`
-	AutoRestartDelayMinutes int64   `json:"auto_restart_delay_minutes,omitempty"`
-	Error                   string  `json:"error,omitempty"`
+	DelayMs                 int64    `json:"delay_ms"`
+	RandomDelay             bool     `json:"random_delay"`
+	IsRunning               bool     `json:"is_running"`
+	DurationMinutes         int64    `json:"duration_minutes,omitempty"`
+	RemainingMinutes        float64  `json:"remaining_minutes,omitempty"`
+	AutoRestartDelayMinutes int64    `json:"auto_restart_delay_minutes,omitempty"`
+	FilteredDomains         []string `json:"filtered_domains,omitempty"`
+	DomainFilterEnabled     bool     `json:"domain_filter_enabled,omitempty"`
+	Error                   string   `json:"error,omitempty"`
 }
 
 // StateFile represents the persisted state for auto-restart after reboot
 type StateFile struct {
-	WasRunning              bool  `json:"was_running"`
-	DelayMs                 int64 `json:"delay_ms"`
-	RandomDelay             bool  `json:"random_delay"`
-	AutoRestartDelayMinutes int64 `json:"auto_restart_delay_minutes"`
+	WasRunning              bool     `json:"was_running"`
+	DelayMs                 int64    `json:"delay_ms"`
+	RandomDelay             bool     `json:"random_delay"`
+	AutoRestartDelayMinutes int64    `json:"auto_restart_delay_minutes"`
+	FilteredDomains         []string `json:"filtered_domains,omitempty"`
+	DomainFilterEnabled     bool     `json:"domain_filter_enabled,omitempty"`
 }
 
 type StatsResponse struct {
@@ -247,6 +255,7 @@ func main() {
 	http.HandleFunc("/api/ping/stream", handlePingStream)
 	http.HandleFunc("/api/schedule", handleSchedule)
 	http.HandleFunc("/api/logs", handleLogs)
+	http.HandleFunc("/api/domains", handleDomains)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
@@ -309,6 +318,12 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		autoRestartDelay := autoRestartDelayMinutes
 		autoRestartDelayMutex.RUnlock()
 
+		domainFilterMutex.RLock()
+		domains := make([]string, len(filteredDomains))
+		copy(domains, filteredDomains)
+		domainFilterEnabled := domainFilterEnabled
+		domainFilterMutex.RUnlock()
+
 		// Calculate duration and remaining time
 		sessionEndTimeMutex.RLock()
 		endTime := sessionEndTime
@@ -335,6 +350,8 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 			DurationMinutes:         durationMinutes,
 			RemainingMinutes:        remainingMinutes,
 			AutoRestartDelayMinutes: autoRestartDelay,
+			FilteredDomains:         domains,
+			DomainFilterEnabled:     domainFilterEnabled,
 		})
 
 	case "POST":
@@ -575,6 +592,14 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 
 	// Set random delay mode
 	packetEngine.SetRandomDelay(randomDelay)
+
+	// Apply domain filter settings
+	domainFilterMutex.RLock()
+	domains := make([]string, len(filteredDomains))
+	copy(domains, filteredDomains)
+	enabled := domainFilterEnabled
+	domainFilterMutex.RUnlock()
+	packetEngine.SetDomainFilter(domains, enabled)
 
 	go packetEngine.Start()
 
@@ -917,11 +942,19 @@ func saveState() error {
 	autoRestartDelay := autoRestartDelayMinutes
 	autoRestartDelayMutex.RUnlock()
 
+	domainFilterMutex.RLock()
+	domains := make([]string, len(filteredDomains))
+	copy(domains, filteredDomains)
+	domainFilterEnabled := domainFilterEnabled
+	domainFilterMutex.RUnlock()
+
 	state := StateFile{
 		WasRunning:              true,
 		DelayMs:                 delayMs,
 		RandomDelay:             randomDelay,
 		AutoRestartDelayMinutes: autoRestartDelay,
+		FilteredDomains:         domains,
+		DomainFilterEnabled:     domainFilterEnabled,
 	}
 
 	data, err := json.MarshalIndent(state, "", "  ")
@@ -933,7 +966,7 @@ func saveState() error {
 		return fmt.Errorf("failed to write state file: %v", err)
 	}
 
-	log.Printf("[STATE] Saved state: delay=%dms, random_delay=%v, auto_restart_delay=%dmin", delayMs, randomDelay, autoRestartDelay)
+	log.Printf("[STATE] Saved state: delay=%dms, random_delay=%v, auto_restart_delay=%dmin, domain_filter_enabled=%v, domains=%v", delayMs, randomDelay, autoRestartDelay, domainFilterEnabled, domains)
 	return nil
 }
 
@@ -958,8 +991,16 @@ func loadState() (*StateFile, error) {
 		return nil, fmt.Errorf("failed to unmarshal state: %v", err)
 	}
 
-	log.Printf("[STATE] Loaded state: was_running=%v, delay=%dms, random_delay=%v, auto_restart_delay=%dmin",
-		state.WasRunning, state.DelayMs, state.RandomDelay, state.AutoRestartDelayMinutes)
+	// Restore domain filter settings if present
+	if state.FilteredDomains != nil {
+		domainFilterMutex.Lock()
+		filteredDomains = state.FilteredDomains
+		domainFilterEnabled = state.DomainFilterEnabled
+		domainFilterMutex.Unlock()
+	}
+
+	log.Printf("[STATE] Loaded state: was_running=%v, delay=%dms, random_delay=%v, auto_restart_delay=%dmin, domain_filter_enabled=%v, domains=%v",
+		state.WasRunning, state.DelayMs, state.RandomDelay, state.AutoRestartDelayMinutes, state.DomainFilterEnabled, state.FilteredDomains)
 	return &state, nil
 }
 
@@ -1847,4 +1888,112 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 		Entries: entries,
 		Count:   len(entries),
 	})
+}
+
+func handleDomains(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case "GET":
+		domainFilterMutex.RLock()
+		domains := make([]string, len(filteredDomains))
+		copy(domains, filteredDomains)
+		enabled := domainFilterEnabled
+		domainFilterMutex.RUnlock()
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"filtered_domains":     domains,
+			"domain_filter_enabled": enabled,
+		})
+
+	case "POST":
+		var req struct {
+			FilteredDomains     []string `json:"filtered_domains"`
+			DomainFilterEnabled bool     `json:"domain_filter_enabled"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("[ERROR] Invalid domain filter request: %v", err)
+			http.Error(w, `{"error": "Invalid request"}`, http.StatusBadRequest)
+			return
+		}
+
+		// Validate and normalize domains
+		validDomains := make([]string, 0)
+		for _, domain := range req.FilteredDomains {
+			domain = strings.TrimSpace(domain)
+			if domain != "" {
+				// Basic validation - allow alphanumeric, dots, hyphens, wildcards
+				if len(domain) <= 255 {
+					validDomains = append(validDomains, domain)
+				}
+			}
+		}
+
+		// Update domain filter
+		domainFilterMutex.Lock()
+		filteredDomains = validDomains
+		domainFilterEnabled = req.DomainFilterEnabled
+		domainFilterMutex.Unlock()
+
+		log.Printf("[HTTP] POST /api/domains - Updated: enabled=%v, domains=%v", req.DomainFilterEnabled, validDomains)
+
+		// Update running packet engine if it exists
+		if packetEngine != nil {
+			packetEngine.SetDomainFilter(validDomains, req.DomainFilterEnabled)
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"filtered_domains":     validDomains,
+			"domain_filter_enabled": req.DomainFilterEnabled,
+			"success":              true,
+		})
+
+	case "DELETE":
+		// Extract domain from URL path
+		path := r.URL.Path
+		parts := strings.Split(path, "/")
+		if len(parts) < 4 {
+			http.Error(w, `{"error": "Domain not specified"}`, http.StatusBadRequest)
+			return
+		}
+		domainToRemove := strings.TrimSpace(parts[len(parts)-1])
+
+		domainFilterMutex.Lock()
+		newDomains := make([]string, 0)
+		for _, domain := range filteredDomains {
+			if strings.ToLower(strings.TrimSpace(domain)) != strings.ToLower(domainToRemove) {
+				newDomains = append(newDomains, domain)
+			}
+		}
+		filteredDomains = newDomains
+		domainFilterMutex.Unlock()
+
+		log.Printf("[HTTP] DELETE /api/domains/%s - Removed domain", domainToRemove)
+
+		// Update running packet engine if it exists
+		if packetEngine != nil {
+			domainFilterMutex.RLock()
+			domains := make([]string, len(filteredDomains))
+			copy(domains, filteredDomains)
+			enabled := domainFilterEnabled
+			domainFilterMutex.RUnlock()
+			packetEngine.SetDomainFilter(domains, enabled)
+		}
+
+		domainFilterMutex.RLock()
+		domains := make([]string, len(filteredDomains))
+		copy(domains, filteredDomains)
+		enabled := domainFilterEnabled
+		domainFilterMutex.RUnlock()
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"filtered_domains":     domains,
+			"domain_filter_enabled": enabled,
+			"success":              true,
+		})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }

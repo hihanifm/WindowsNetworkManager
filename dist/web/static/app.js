@@ -679,6 +679,7 @@ async function loadSchedule() {
         document.getElementById('scheduleStartTime').value = schedule.start_time || '09:00';
         document.getElementById('scheduleEndTime').value = schedule.end_time || '18:00';
         document.getElementById('scheduleMaxDelay').value = schedule.max_delay_ms || 1000;
+        document.getElementById('scheduleMaxSessionsPerHour').value = schedule.max_sessions_per_hour || 6;
         
         // Set day checkboxes
         if (schedule.days && Array.isArray(schedule.days)) {
@@ -710,6 +711,7 @@ async function saveSchedule() {
         const startTime = document.getElementById('scheduleStartTime').value;
         const endTime = document.getElementById('scheduleEndTime').value;
         const maxDelayMs = parseInt(document.getElementById('scheduleMaxDelay').value);
+        const maxSessionsPerHour = parseInt(document.getElementById('scheduleMaxSessionsPerHour').value);
         
         // Get selected days
         const days = [];
@@ -730,12 +732,18 @@ async function saveSchedule() {
             return;
         }
         
+        if (isNaN(maxSessionsPerHour) || maxSessionsPerHour < 2 || maxSessionsPerHour > 60) {
+            showError('Max sessions per hour must be between 2 and 60');
+            return;
+        }
+        
         const schedule = {
             enabled: enabled,
             days: days,
             start_time: startTime,
             end_time: endTime,
-            max_delay_ms: maxDelayMs
+            max_delay_ms: maxDelayMs,
+            max_sessions_per_hour: maxSessionsPerHour
         };
         
         const response = await fetch('/api/schedule', {
@@ -763,6 +771,8 @@ async function saveSchedule() {
 function updateScheduleStatus(schedule) {
     const statusEl = document.getElementById('scheduleStatus');
     const statusTextEl = document.getElementById('scheduleStatusText');
+    const nextSessionTimeEl = document.getElementById('nextSessionTime');
+    const sessionsCompletedEl = document.getElementById('sessionsCompleted');
     
     if (!schedule.enabled) {
         statusEl.style.display = 'none';
@@ -771,40 +781,68 @@ function updateScheduleStatus(schedule) {
     
     statusEl.style.display = 'block';
     
-    // Check if current time is within schedule
-    const now = new Date();
-    const currentDay = now.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-    
-    // Check if current day is in schedule
-    const dayInSchedule = schedule.days && schedule.days.includes(currentDay);
-    
-    // Parse start and end times
-    const [startHour, startMin] = (schedule.start_time || '09:00').split(':').map(Number);
-    const [endHour, endMin] = (schedule.end_time || '18:00').split(':').map(Number);
-    
-    const currentTimeMinutes = currentHour * 60 + currentMinute;
-    const startTimeMinutes = startHour * 60 + startMin;
-    let endTimeMinutes = endHour * 60 + endMin;
-    
-    // Handle case where end time is next day
-    if (endTimeMinutes <= startTimeMinutes) {
-        endTimeMinutes += 24 * 60;
-        if (currentTimeMinutes < startTimeMinutes) {
-            // Check if we're in the previous day's end period
-            const adjustedCurrentTime = currentTimeMinutes + 24 * 60;
-            if (adjustedCurrentTime >= startTimeMinutes - 24 * 60 && adjustedCurrentTime <= endTimeMinutes) {
-                statusTextEl.textContent = 'Active (within schedule time range)';
-                statusEl.style.background = '#d1fae5';
-                statusTextEl.style.color = '#065f46';
-                return;
-            }
-        }
+    // Update sessions completed count
+    if (schedule.sessions_completed !== undefined) {
+        sessionsCompletedEl.textContent = schedule.sessions_completed;
+    } else {
+        sessionsCompletedEl.textContent = '0';
     }
     
-    const withinTimeRange = currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes;
-    const isActive = dayInSchedule && withinTimeRange;
+    // Update next session time
+    if (schedule.next_session_time_local) {
+        nextSessionTimeEl.textContent = schedule.next_session_time_local;
+    } else if (schedule.next_session_time) {
+        // Parse ISO format and show local time
+        try {
+            const nextSession = new Date(schedule.next_session_time);
+            const hours = String(nextSession.getHours()).padStart(2, '0');
+            const minutes = String(nextSession.getMinutes()).padStart(2, '0');
+            const seconds = String(nextSession.getSeconds()).padStart(2, '0');
+            nextSessionTimeEl.textContent = `${hours}:${minutes}:${seconds}`;
+        } catch (e) {
+            nextSessionTimeEl.textContent = schedule.next_session_time;
+        }
+    } else {
+        nextSessionTimeEl.textContent = 'No upcoming session';
+    }
+    
+    // Check if current time is within schedule (use server data if available, otherwise calculate client-side)
+    let isActive = false;
+    if (schedule.is_within_schedule !== undefined) {
+        isActive = schedule.is_within_schedule;
+    } else {
+        // Fallback to client-side calculation
+        const now = new Date();
+        const currentDay = now.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+        const currentHour = now.getHours();
+        const currentMinute = now.getMinutes();
+        
+        // Check if current day is in schedule
+        const dayInSchedule = schedule.days && schedule.days.includes(currentDay);
+        
+        // Parse start and end times
+        const [startHour, startMin] = (schedule.start_time || '09:00').split(':').map(Number);
+        const [endHour, endMin] = (schedule.end_time || '18:00').split(':').map(Number);
+        
+        const currentTimeMinutes = currentHour * 60 + currentMinute;
+        const startTimeMinutes = startHour * 60 + startMin;
+        let endTimeMinutes = endHour * 60 + endMin;
+        
+        // Handle case where end time is next day
+        if (endTimeMinutes <= startTimeMinutes) {
+            endTimeMinutes += 24 * 60;
+            if (currentTimeMinutes < startTimeMinutes) {
+                // Check if we're in the previous day's end period
+                const adjustedCurrentTime = currentTimeMinutes + 24 * 60;
+                if (adjustedCurrentTime >= startTimeMinutes - 24 * 60 && adjustedCurrentTime <= endTimeMinutes) {
+                    isActive = true;
+                }
+            }
+        }
+        
+        const withinTimeRange = currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes;
+        isActive = dayInSchedule && withinTimeRange;
+    }
     
     if (isActive) {
         statusTextEl.textContent = 'Active (within schedule time range)';
@@ -812,10 +850,26 @@ function updateScheduleStatus(schedule) {
         statusTextEl.style.color = '#065f46';
     } else {
         let reason = '';
-        if (!dayInSchedule) {
-            reason = 'Current day not in schedule';
-        } else if (!withinTimeRange) {
-            reason = 'Outside schedule time range';
+        if (!schedule.is_within_schedule) {
+            // Use server-side info if available
+            const now = new Date();
+            const currentDay = now.getDay();
+            const dayInSchedule = schedule.days && schedule.days.includes(currentDay);
+            if (!dayInSchedule) {
+                reason = 'Current day not in schedule';
+            } else {
+                reason = 'Outside schedule time range';
+            }
+        } else {
+            // Fallback client-side calculation
+            const now = new Date();
+            const currentDay = now.getDay();
+            const dayInSchedule = schedule.days && schedule.days.includes(currentDay);
+            if (!dayInSchedule) {
+                reason = 'Current day not in schedule';
+            } else {
+                reason = 'Outside schedule time range';
+            }
         }
         statusTextEl.textContent = 'Inactive - ' + reason;
         statusEl.style.background = '#fee2e2';

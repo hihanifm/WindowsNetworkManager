@@ -11,6 +11,7 @@ window.addEventListener('DOMContentLoaded', () => {
     loadUpgradeInfo();
     loadSchedule();
     loadLogs();
+    loadDomainFilter();
     // Don't start stats updates yet - wait for config to load
     
     // Attach event listeners to buttons (more reliable than inline onclick)
@@ -993,3 +994,112 @@ function renderLogs(entries) {
         console.error('Error registering global functions:', error);
     }
 })();
+
+// Domain filter functions
+let filteredDomainsList = [];
+let domainFilterEnabled = false;
+
+async function loadDomainFilter() {
+    try {
+        const response = await fetch('/api/domains');
+        const data = await response.json();
+        filteredDomainsList = data.filtered_domains || [];
+        domainFilterEnabled = data.domain_filter_enabled || false;
+        
+        document.getElementById('domainFilterEnabled').checked = domainFilterEnabled;
+        updateDomainList();
+    } catch (error) {
+        console.error('Failed to load domain filter:', error);
+        showError('Failed to load domain filter: ' + error.message);
+    }
+}
+
+function updateDomainList() {
+    const domainList = document.getElementById('domainList');
+    if (filteredDomainsList.length === 0) {
+        domainList.innerHTML = '<p style="color: #666; font-style: italic;">No domains configured. All packets will be delayed when filter is disabled.</p>';
+        return;
+    }
+    
+    domainList.innerHTML = filteredDomainsList.map(domain => `
+        <div class="domain-item">
+            <span class="domain-name">${escapeHtml(domain)}</span>
+            <button class="domain-remove" onclick="removeDomain('${escapeHtml(domain)}')">Remove</button>
+        </div>
+    `).join('');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function addDomain() {
+    const input = document.getElementById('newDomain');
+    const domain = input.value.trim();
+    
+    if (!domain) {
+        showError('Please enter a domain name');
+        return;
+    }
+    
+    // Basic validation
+    if (domain.length > 255) {
+        showError('Domain name too long (max 255 characters)');
+        return;
+    }
+    
+    // Check if already exists (case-insensitive)
+    const domainLower = domain.toLowerCase();
+    if (filteredDomainsList.some(d => d.toLowerCase() === domainLower)) {
+        showError('Domain already in list');
+        return;
+    }
+    
+    filteredDomainsList.push(domain);
+    input.value = '';
+    updateDomainList();
+}
+
+async function removeDomain(domain) {
+    filteredDomainsList = filteredDomainsList.filter(d => d !== domain);
+    updateDomainList();
+}
+
+async function saveDomainFilter() {
+    try {
+        const enabled = document.getElementById('domainFilterEnabled').checked;
+        
+        const response = await fetch('/api/domains', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                filtered_domains: filteredDomainsList,
+                domain_filter_enabled: enabled
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to save domain filter');
+        }
+        
+        const data = await response.json();
+        filteredDomainsList = data.filtered_domains || [];
+        domainFilterEnabled = data.domain_filter_enabled || false;
+        updateDomainList();
+        
+        showSuccess('Domain filter saved successfully');
+    } catch (error) {
+        console.error('Failed to save domain filter:', error);
+        showError('Failed to save domain filter: ' + error.message);
+    }
+}
+
+// Make functions available globally
+window.addDomain = addDomain;
+window.removeDomain = removeDomain;
+window.saveDomainFilter = saveDomainFilter;

@@ -73,8 +73,45 @@ for /f "tokens=3" %%a in ('sc query %SERVICE_NAME% ^| findstr "STATE"') do (
 )
 echo.
 
-:: 4. Check if executable exists
-echo [4] Executable Check:
+:: 4. WinDivert Driver Status
+echo [4] WinDivert Driver Status:
+echo ----------------------------------------
+sc query WinDivert >nul 2>&1
+if %errorLevel% neq 0 (
+    echo WinDivert driver service: NOT INSTALLED
+    echo.
+    echo The WinDivert driver is required for packet interception.
+    echo To install the driver:
+    echo   1. Run install_windivert_driver.bat as Administrator
+    echo   2. Or ensure WinDivert64.sys (or WinDivert32.sys) is in the executable directory
+    echo      and run WindowsNetworkManager.exe as Administrator (driver will auto-install)
+) else (
+    echo WinDivert driver service: INSTALLED
+    echo.
+    echo Driver service details:
+    sc query WinDivert
+    echo.
+    echo Driver service configuration:
+    sc qc WinDivert 2>nul
+    echo.
+    REM Check if driver is running
+    sc query WinDivert | findstr /C:"RUNNING" >nul 2>&1
+    if %errorLevel% equ 0 (
+        echo Driver Status: RUNNING
+    ) else (
+        sc query WinDivert | findstr /C:"STOPPED" >nul 2>&1
+        if %errorLevel% equ 0 (
+            echo Driver Status: STOPPED
+            echo WARNING: Driver service is stopped. It may start automatically when needed.
+        ) else (
+            echo Driver Status: UNKNOWN
+        )
+    )
+)
+echo.
+
+REM 4b. Check if executable exists (moved from step 4)
+echo [4b] Executable Check:
 echo ----------------------------------------
 if defined PATH_PROVIDED (
     echo Executable path was provided as argument

@@ -307,6 +307,40 @@
             font-style: italic;
         }
 
+        .domain-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            margin: 5px 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .domain-item:hover {
+            background: #f8fafc;
+        }
+
+        .domain-name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .domain-remove {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .domain-remove:hover {
+            background: #dc2626;
+        }
+
         .ping-result-line {
             margin-bottom: 4px;
         }
@@ -530,6 +564,38 @@
 
             <div class="info-box" style="margin-top: 20px;">
                 <p><strong>📝 Note:</strong> The scheduler will randomly create between 50% and 100% of the configured max sessions per hour during the configured time range (e.g., if max is 10, it will randomly choose 5-10 sessions per hour). Each session lasts 2-5 minutes with random delays between 1ms and the configured max delay.</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🌐 Domain Filter</h2>
+            <p class="subtitle">Delay packets only to specific domains (e.g., youtube.com, googlevideo.com). When disabled, all packets are delayed.</p>
+            
+            <div class="control-group" style="margin-bottom: 20px;">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="domainFilterEnabled">
+                    <label for="domainFilterEnabled">Enable Domain Filtering</label>
+                </div>
+                <button class="btn-primary" onclick="saveDomainFilter()">Save Filter</button>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label for="newDomain" style="display: block; margin-bottom: 10px; font-weight: 600;">Add Domain:</label>
+                <div class="control-group">
+                    <input type="text" id="newDomain" placeholder="e.g., youtube.com" style="flex: 1; max-width: 400px;">
+                    <button class="btn-primary" onclick="addDomain()">Add</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">Filtered Domains:</label>
+                <div id="domainList" style="min-height: 50px; padding: 10px; background: #f8fafc; border-radius: 6px;">
+                    <p style="color: #666; font-style: italic;">No domains configured. All packets will be delayed when filter is disabled.</p>
+                </div>
+            </div>
+
+            <div class="info-box" style="margin-top: 20px;">
+                <p><strong>📝 Note:</strong> Domain filtering works by inspecting HTTP Host headers (port 80) and TLS SNI (port 443). Traffic on other ports or without SNI may not be filtered. When domain filtering is enabled, only packets matching the configured domains will be delayed.</p>
             </div>
         </div>
 
