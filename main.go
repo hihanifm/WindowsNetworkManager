@@ -1015,31 +1015,67 @@ func getEventLogs(count int) ([]LogEntry, error) {
 	}
 
 	// Convert to LogEntry structs
+	// Compile regex once for message cleaning (reused in loop)
+	newlineRegex := regexp.MustCompile(`\n{2,}`)
+	
 	entries := make([]LogEntry, 0, len(rawEntries))
 	for _, raw := range rawEntries {
 		entry := LogEntry{}
 
 		// Parse timestamp
-		if ts, ok := raw["TimeGenerated"].(string); ok {
-			// Try different date formats that PowerShell might return
-			dateFormats := []string{
-				"2006-01-02T15:04:05",
-				"2006-01-02T15:04:05.0000000",
-				"2006-01-02T15:04:05Z",
-				"2006-01-02T15:04:05-07:00",
-				time.RFC3339,
-				time.RFC3339Nano,
+		if tsInterface := raw["TimeGenerated"]; tsInterface != nil {
+			var ts string
+			switch v := tsInterface.(type) {
+			case string:
+				ts = v
+			case float64:
+				// Handle Unix timestamp (seconds)
+				entry.Timestamp = time.Unix(int64(v), 0).Format("2006-01-02 15:04:05")
+			default:
+				ts = fmt.Sprintf("%v", v)
 			}
-			parsed := false
-			for _, format := range dateFormats {
-				if t, err := time.Parse(format, ts); err == nil {
-					entry.Timestamp = t.Format("2006-01-02 15:04:05")
-					parsed = true
-					break
+
+			if ts != "" {
+				// Try different date formats that PowerShell might return
+				dateFormats := []string{
+					"2006-01-02T15:04:05",
+					"2006-01-02T15:04:05.0000000",
+					"2006-01-02T15:04:05.0000000Z",
+					"2006-01-02T15:04:05Z",
+					"2006-01-02T15:04:05-07:00",
+					time.RFC3339,
+					time.RFC3339Nano,
+					"1/2/2006 3:04:05 PM",
+					"1/2/2006 15:04:05",
+					"01/02/2006 3:04:05 PM",
+					"01/02/2006 15:04:05",
 				}
-			}
-			if !parsed {
-				entry.Timestamp = ts // Use original if parsing fails
+				parsed := false
+				for _, format := range dateFormats {
+					if t, err := time.Parse(format, ts); err == nil {
+						entry.Timestamp = t.Format("2006-01-02 15:04:05")
+						parsed = true
+						break
+					}
+				}
+				if !parsed {
+					// Try parsing in local timezone
+					for _, format := range []string{"2006-01-02T15:04:05", "2006-01-02 15:04:05"} {
+						if t, err := time.ParseInLocation(format, ts, time.Local); err == nil {
+							entry.Timestamp = t.Format("2006-01-02 15:04:05")
+							parsed = true
+							break
+						}
+					}
+				}
+				if !parsed {
+					// Use original if parsing fails, but limit length for readability
+					if len(ts) > 50 {
+						entry.Timestamp = ts[:47] + "..."
+					} else {
+						entry.Timestamp = ts
+					}
+				}
 			}
 		}
 
@@ -1053,8 +1089,12 @@ func getEventLogs(count int) ([]LogEntry, error) {
 			entry.EventID = int(eventID)
 		}
 
-		// Parse message
+		// Parse message and clean it
 		if msg, ok := raw["Message"].(string); ok {
+			// Clean message: collapse multiple consecutive newlines (2+) to a single newline
+			msg = newlineRegex.ReplaceAllString(msg, "\n")
+			// Remove leading/trailing whitespace (including newlines)
+			msg = strings.TrimSpace(msg)
 			entry.Message = msg
 		}
 
