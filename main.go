@@ -252,9 +252,11 @@ func main() {
 	http.HandleFunc("/api/upgrade/status", handleUpgradeStatus)
 	http.HandleFunc("/api/ping/start", handlePingStart)
 	http.HandleFunc("/api/ping/stop", handlePingStop)
+	http.HandleFunc("/api/ping/status", handlePingStatus)
 	http.HandleFunc("/api/ping/stream", handlePingStream)
 	http.HandleFunc("/api/schedule", handleSchedule)
 	http.HandleFunc("/api/logs", handleLogs)
+	http.HandleFunc("/api/logs/local", handleLocalLogs)
 	http.HandleFunc("/api/domains", handleDomains)
 
 	// Serve static files
@@ -1701,6 +1703,25 @@ func handlePingStop(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handlePingStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pingMutex.RLock()
+	running := pingRunning
+	domain := pingDomain
+	pingMutex.RUnlock()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"is_running": running,
+		"domain":     domain,
+	})
+}
+
 func handlePingStream(w http.ResponseWriter, r *http.Request) {
 	// Add panic recovery to prevent crashes
 	defer func() {
@@ -1888,6 +1909,180 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 		Entries: entries,
 		Count:   len(entries),
 	})
+}
+
+type LocalLogsResponse struct {
+	Files   []LocalLogFile `json:"files"`
+	Content string         `json:"content,omitempty"`
+	Error   string         `json:"error,omitempty"`
+}
+
+type LocalLogFile struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+	Modified string `json:"modified"`
+}
+
+func handleLocalLogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Printf("[HTTP] GET /api/logs/local - Request received")
+
+	// Get executable directory
+	exePath, err := os.Executable()
+	if err != nil {
+		json.NewEncoder(w).Encode(LocalLogsResponse{
+			Error: fmt.Sprintf("Failed to get executable path: %v", err),
+		})
+		return
+	}
+	exeDir := filepath.Dir(exePath)
+
+	// Check if a specific file was requested
+	fileParam := r.URL.Query().Get("file")
+	if fileParam != "" {
+		// Return content of specific file
+		filePath := filepath.Join(exeDir, fileParam)
+		// Security: ensure the file is within the executable directory
+		if !strings.HasPrefix(filepath.Clean(filePath), filepath.Clean(exeDir)) {
+			json.NewEncoder(w).Encode(LocalLogsResponse{
+				Error: "Invalid file path",
+			})
+			return
+		}
+
+		content, err := readLogFile(filePath)
+		if err != nil {
+			json.NewEncoder(w).Encode(LocalLogsResponse{
+				Error: fmt.Sprintf("Failed to read log file: %v", err),
+			})
+			return
+		}
+
+		json.NewEncoder(w).Encode(LocalLogsResponse{
+			Content: content,
+		})
+		return
+	}
+
+	// List available log files
+	files, err := findLogFiles(exeDir)
+	if err != nil {
+		log.Printf("[HTTP] GET /api/logs/local - Error finding log files: %v", err)
+		json.NewEncoder(w).Encode(LocalLogsResponse{
+			Files: files,
+			Error: fmt.Sprintf("Error finding log files: %v", err),
+		})
+		return
+	}
+
+	log.Printf("[HTTP] GET /api/logs/local - Found %d log files", len(files))
+	json.NewEncoder(w).Encode(LocalLogsResponse{
+		Files: files,
+	})
+}
+
+func findLogFiles(exeDir string) ([]LocalLogFile, error) {
+	var logFiles []LocalLogFile
+
+	// Check executable directory
+	dirsToCheck := []string{
+		exeDir,
+		filepath.Join(exeDir, "logs"),
+	}
+
+	// Common log file patterns
+	logPatterns := []string{"*.log", "*.txt"}
+
+	for _, dir := range dirsToCheck {
+		// Check if directory exists
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			continue
+		}
+
+		// Search for log files
+		for _, pattern := range logPatterns {
+			matches, err := filepath.Glob(filepath.Join(dir, pattern))
+			if err != nil {
+				continue
+			}
+
+			for _, match := range matches {
+				info, err := os.Stat(match)
+				if err != nil {
+					continue
+				}
+
+				// Skip if it's a directory
+				if info.IsDir() {
+					continue
+				}
+
+				// Get relative path from executable directory
+				relPath, err := filepath.Rel(exeDir, match)
+				if err != nil {
+					relPath = filepath.Base(match)
+				}
+
+				logFiles = append(logFiles, LocalLogFile{
+					Name:     filepath.Base(match),
+					Path:     relPath,
+					Size:     info.Size(),
+					Modified: info.ModTime().Format("2006-01-02 15:04:05"),
+				})
+			}
+		}
+	}
+
+	return logFiles, nil
+}
+
+func readLogFile(filePath string) (string, error) {
+	// Limit file size to 10MB to prevent memory issues
+	const maxSize = 10 * 1024 * 1024
+
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	if info.Size() > maxSize {
+		// Read only the last 10MB
+		file, err := os.Open(filePath)
+		if err != nil {
+			return "", err
+		}
+		defer file.Close()
+
+		// Seek to position (size - maxSize) from the end
+		offset := info.Size() - maxSize
+		if offset < 0 {
+			offset = 0
+		}
+		file.Seek(offset, 0)
+
+		content := make([]byte, maxSize)
+		n, err := file.Read(content)
+		if err != nil && err.Error() != "EOF" {
+			return "", err
+		}
+
+		return fmt.Sprintf("... (showing last %d bytes of %d total bytes)\n\n%s", n, info.Size(), string(content[:n])), nil
+	}
+
+	// Read entire file
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
 }
 
 func handleDomains(w http.ResponseWriter, r *http.Request) {

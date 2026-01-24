@@ -4,6 +4,7 @@ let isServiceRunning = false;
 let countdownInterval;
 let pingEventSource = null;
 let isPingRunning = false;
+let pingStopRequested = false; // Flag to prevent multiple stop requests on unload
 
 // Load current configuration on page load
 window.addEventListener('DOMContentLoaded', () => {
@@ -12,6 +13,7 @@ window.addEventListener('DOMContentLoaded', () => {
     loadSchedule();
     loadLogs();
     loadDomainFilter();
+    loadPingStatus();
     // Don't start stats updates yet - wait for config to load
     
     // Attach event listeners to buttons (more reliable than inline onclick)
@@ -25,6 +27,20 @@ window.addEventListener('DOMContentLoaded', () => {
             } else {
                 console.error('refreshLogs function not found');
                 alert('Error: refreshLogs function not loaded. Please refresh the page.');
+            }
+        });
+    }
+    
+    const viewLocalLogsBtn = document.getElementById('viewLocalLogsBtn');
+    if (viewLocalLogsBtn) {
+        viewLocalLogsBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('View Local Logs button clicked');
+            if (typeof loadLocalLogs === 'function') {
+                loadLocalLogs();
+            } else {
+                console.error('loadLocalLogs function not found');
+                alert('Error: loadLocalLogs function not loaded. Please refresh the page.');
             }
         });
     }
@@ -55,6 +71,31 @@ window.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    
+    // Stop ping when page is closed/unloaded
+    function stopPingOnUnload() {
+        if (isPingRunning && !pingStopRequested) {
+            pingStopRequested = true;
+            // Use fetch with keepalive for reliable delivery during page unload
+            // keepalive ensures the request completes even if the page is closing
+            fetch('/api/ping/stop', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({}),
+                keepalive: true
+            }).catch(err => {
+                // Silently fail - page is unloading anyway
+                console.log('Failed to stop ping on unload:', err);
+            });
+        }
+    }
+    
+    // Use both beforeunload and pagehide for maximum reliability
+    // pagehide is more reliable in modern browsers and works even when page is cached
+    window.addEventListener('beforeunload', stopPingOnUnload);
+    window.addEventListener('pagehide', stopPingOnUnload);
 });
 
 async function loadConfig() {
@@ -324,7 +365,7 @@ function startCountdown() {
         } catch (error) {
             console.error('Failed to update countdown:', error);
         }
-    }, 1000); // Update every second
+    }, 30000); // Update every 30 seconds
 }
 
 function stopCountdown() {
@@ -546,9 +587,17 @@ async function startPing() {
         const result = await response.json();
         
         if (result.error) {
+            // If error says ping is already running, update UI state
+            if (result.error.includes('already running')) {
+                isPingRunning = true;
+                pingStopRequested = false; // Reset flag when ping is running
+                updatePingButtonStates(true);
+                startPingStream();
+            }
             showError(result.error);
         } else {
             isPingRunning = true;
+            pingStopRequested = false; // Reset flag when ping starts
             updatePingButtonStates(true);
             clearPingResults();
             startPingStream();
@@ -661,6 +710,32 @@ function updatePingButtonStates(isRunning) {
         pingBtn.disabled = false;
         pingStopBtn.disabled = true;
         pingDomainInput.disabled = false;
+    }
+}
+
+async function loadPingStatus() {
+    try {
+        const response = await fetch('/api/ping/status');
+        const status = await response.json();
+        
+        if (status.is_running) {
+            isPingRunning = true;
+            pingStopRequested = false; // Reset flag when ping is running
+            updatePingButtonStates(true);
+            // If ping is already running, start the stream to show results
+            if (status.domain) {
+                document.getElementById('pingDomain').value = status.domain;
+            }
+            startPingStream();
+        } else {
+            isPingRunning = false;
+            updatePingButtonStates(false);
+        }
+    } catch (error) {
+        console.error('Failed to load ping status:', error);
+        // On error, assume ping is not running
+        isPingRunning = false;
+        updatePingButtonStates(false);
     }
 }
 
@@ -975,6 +1050,158 @@ function renderLogs(entries) {
     logsContainer.scrollTop = logsContainer.scrollHeight;
 }
 
+// Local logs functions
+async function loadLocalLogs() {
+    const localLogsSection = document.getElementById('localLogsSection');
+    const localLogsFiles = document.getElementById('localLogsFiles');
+    const localLogsError = document.getElementById('localLogsError');
+    const viewLocalLogsBtn = document.getElementById('viewLocalLogsBtn');
+    
+    if (!localLogsSection || !localLogsFiles) {
+        console.error('Local logs elements not found');
+        return;
+    }
+    
+    // Show loading state
+    if (viewLocalLogsBtn) {
+        viewLocalLogsBtn.disabled = true;
+        viewLocalLogsBtn.textContent = 'Loading...';
+    }
+    
+    localLogsSection.style.display = 'block';
+    localLogsFiles.innerHTML = '<div style="color: #64748b; font-style: italic;">Loading log files...</div>';
+    localLogsError.style.display = 'none';
+    
+    try {
+        const response = await fetch('/api/logs/local');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            localLogsError.textContent = result.error;
+            localLogsError.style.display = 'block';
+            localLogsFiles.innerHTML = '<div style="color: #64748b; font-style: italic;">Error loading log files. See error message below.</div>';
+        } else if (result.files && result.files.length > 0) {
+            localLogsError.style.display = 'none';
+            renderLocalLogFiles(result.files);
+        } else {
+            localLogsError.style.display = 'none';
+            localLogsFiles.innerHTML = '<div style="color: #64748b; font-style: italic;">No local log files found.</div>';
+        }
+    } catch (error) {
+        localLogsError.textContent = 'Failed to load local logs: ' + error.message;
+        localLogsError.style.display = 'block';
+        localLogsFiles.innerHTML = '<div style="color: #ef4444; font-style: italic;">Failed to load log files. Check console for details.</div>';
+        console.error('Failed to load local logs:', error);
+    } finally {
+        if (viewLocalLogsBtn) {
+            viewLocalLogsBtn.disabled = false;
+            viewLocalLogsBtn.textContent = 'View Local Logs';
+        }
+    }
+}
+
+function renderLocalLogFiles(files) {
+    const localLogsFiles = document.getElementById('localLogsFiles');
+    if (!localLogsFiles) return;
+    
+    localLogsFiles.innerHTML = files.map(file => {
+        const sizeKB = (file.size / 1024).toFixed(2);
+        const sizeDisplay = file.size > 1024 * 1024 
+            ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+            : `${sizeKB} KB`;
+        
+        return `
+            <div class="domain-item" style="margin-bottom: 10px;">
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; color: #333; margin-bottom: 4px;">${escapeHtml(file.name)}</div>
+                    <div style="font-size: 12px; color: #666;">
+                        Size: ${sizeDisplay} | Modified: ${file.modified}
+                    </div>
+                </div>
+                <button class="btn-primary" onclick="openLocalLog('${escapeHtml(file.path)}')" style="margin-left: 10px; padding: 8px 16px; font-size: 14px;">View</button>
+                <button class="btn-primary" onclick="downloadLocalLog('${escapeHtml(file.path)}', '${escapeHtml(file.name)}')" style="margin-left: 5px; padding: 8px 16px; font-size: 14px;">Download</button>
+            </div>
+        `;
+    }).join('');
+}
+
+async function openLocalLog(filePath) {
+    const localLogsContent = document.getElementById('localLogsContent');
+    const localLogsError = document.getElementById('localLogsError');
+    
+    if (!localLogsContent) return;
+    
+    // Show loading state
+    localLogsContent.style.display = 'block';
+    localLogsContent.innerHTML = '<div style="color: #64748b; font-style: italic;">Loading log file...</div>';
+    localLogsError.style.display = 'none';
+    
+    try {
+        const response = await fetch(`/api/logs/local?file=${encodeURIComponent(filePath)}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            localLogsError.textContent = result.error;
+            localLogsError.style.display = 'block';
+            localLogsContent.innerHTML = '<div style="color: #ef4444; font-style: italic;">Error loading log file.</div>';
+        } else if (result.content) {
+            localLogsError.style.display = 'none';
+            // Display content with proper formatting
+            localLogsContent.innerHTML = '<pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0;">' + escapeHtml(result.content) + '</pre>';
+            // Auto-scroll to bottom
+            localLogsContent.scrollTop = localLogsContent.scrollHeight;
+        } else {
+            localLogsContent.innerHTML = '<div style="color: #64748b; font-style: italic;">No content available.</div>';
+        }
+    } catch (error) {
+        localLogsError.textContent = 'Failed to load log file: ' + error.message;
+        localLogsError.style.display = 'block';
+        localLogsContent.innerHTML = '<div style="color: #ef4444; font-style: italic;">Failed to load log file. Check console for details.</div>';
+        console.error('Failed to load log file:', error);
+    }
+}
+
+async function downloadLocalLog(filePath, fileName) {
+    try {
+        const response = await fetch(`/api/logs/local?file=${encodeURIComponent(filePath)}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            alert('Error downloading log file: ' + result.error);
+            return;
+        }
+        
+        // Create a blob and download it
+        const blob = new Blob([result.content], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName || 'log.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    } catch (error) {
+        alert('Failed to download log file: ' + error.message);
+        console.error('Failed to download log file:', error);
+    }
+}
+
 // Ensure all functions are globally accessible for inline onclick handlers
 // This must be done after all functions are defined
 (function() {
@@ -984,11 +1211,17 @@ function renderLogs(entries) {
         window.loadLogs = loadLogs;
         window.startPing = startPing;
         window.stopPing = stopPing;
+        window.loadLocalLogs = loadLocalLogs;
+        window.openLocalLog = openLocalLog;
+        window.downloadLocalLog = downloadLocalLog;
         console.log('Functions registered globally:', {
             refreshLogs: typeof window.refreshLogs,
             loadLogs: typeof window.loadLogs,
             startPing: typeof window.startPing,
-            stopPing: typeof window.stopPing
+            stopPing: typeof window.stopPing,
+            loadLocalLogs: typeof window.loadLocalLogs,
+            openLocalLog: typeof window.openLocalLog,
+            downloadLocalLog: typeof window.downloadLocalLog
         });
     } catch (error) {
         console.error('Error registering global functions:', error);

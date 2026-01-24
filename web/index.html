@@ -628,10 +628,18 @@
             <div class="logs-section">
                 <div class="logs-controls">
                     <button class="btn-primary" id="refreshLogsBtn">Refresh</button>
+                    <button class="btn-primary" id="viewLocalLogsBtn">View Local Logs</button>
                 </div>
                 
                 <div id="logsContainer" class="logs-container"></div>
                 <div id="logsError" class="error" style="display: none; margin-top: 10px;"></div>
+                
+                <div id="localLogsSection" style="display: none; margin-top: 20px;">
+                    <h3 style="margin-bottom: 10px; color: #333;">📁 Local Log Files</h3>
+                    <div id="localLogsFiles" style="margin-bottom: 15px;"></div>
+                    <div id="localLogsContent" class="logs-container" style="display: none;"></div>
+                    <div id="localLogsError" class="error" style="display: none; margin-top: 10px;"></div>
+                </div>
             </div>
         </div>
 

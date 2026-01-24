@@ -114,9 +114,11 @@ func (p *program) run() {
 	http.HandleFunc("/api/upgrade/status", handleUpgradeStatus)
 	http.HandleFunc("/api/ping/start", handlePingStart)
 	http.HandleFunc("/api/ping/stop", handlePingStop)
+	http.HandleFunc("/api/ping/status", handlePingStatus)
 	http.HandleFunc("/api/ping/stream", handlePingStream)
 	http.HandleFunc("/api/schedule", handleSchedule)
 	http.HandleFunc("/api/logs", handleLogs)
+	http.HandleFunc("/api/logs/local", handleLocalLogs)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
