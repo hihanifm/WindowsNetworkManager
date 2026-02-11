@@ -28,6 +28,7 @@ WinDivert.dll
 WinDivert*.sys
 windivert.h
 !vendor/windivert/WinDivert.dll
+!vendor/windivert/WinDivert64.sys
 
 # Release artifacts (ZIP files are created by GitHub Actions and uploaded to Releases)
 release/
