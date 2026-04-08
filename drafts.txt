@@ -1,0 +1,68 @@
+{
+    "status": "idle",
+    "progress": "",
+    "current_version": "2.6.0",
+    "completed_at": "0001-01-01T00:00:00Z"
+}
+
+[DEBUG] Checking if WinDivert driver service exists...
+[DEBUG] Service check result: 0
+[INFO] WinDivert driver service already exists
+
+Checking driver status...
+
+SERVICE_NAME: WinDivert
+        TYPE               : 1  KERNEL_DRIVER
+        STATE              : 1  STOPPED
+        WIN32_EXIT_CODE    : 2  (0x2)
+        SERVICE_EXIT_CODE  : 0  (0x0)
+        CHECKPOINT         : 0x0
+        WAIT_HINT          : 0x0
+
+The driver should auto-load when WindowsNetworkManager.exe starts.
+If you are experiencing issues, try:
+  1. Restart WindowsNetworkManager.exe as Administrator
+  2. Check Event Viewer for driver errors
+  3. Verify the driver file is unblocked by Windows
+
+Press any key to continue . . .
+
+
+2026/01/12 12:43:11 Initializing packet engine with delay: 0s
+2026/01/12 12:43:11 DLL not loaded, initializing...
+2026/01/12 12:43:11 WinDivert DLL loaded successfully from: C:\Users\hihan\Downloads\wnm\WindowsNetworkManager-v2.10.0\WinDivert.dll (architecture: amd64)
+2026/01/12 12:43:11 Creating WinDivert handle with filter: outbound
+2026/01/12 12:43:11 Note: This requires Administrator privileges
+2026/01/12 12:43:11 WinDivert handle created successfully
+2026/01/12 12:43:11 [INFO] Packet interception started successfully
+2026/01/12 12:43:11 Starting packet interception engine...
+2026/01/12 12:43:11 Error receiving packet: WinDivertRecv failed: The handle is invalid.
+2026/01/12 12:43:11 Error receiving packet: WinDivertRecv failed: The handle is invalid.
+2026/01/12 12:43:11 Error receiving packet: WinDivertRecv failed: The handle is invalid.\
+
+
+PS C:\Windows\system32> Get-EventLog -LogName Application -Source "WindowsNetworkManager" -Newest 20
+
+   Index Time          EntryType   Source                 InstanceID Message
+   ----- ----          ---------   ------                 ---------- -------
+   50401 Jan 12 11:44  Information WindowsNetworkMan...            1 Note: Windows Firewall may need to allow incomi...
+   50400 Jan 12 11:44  Information WindowsNetworkMan...            1 Note: This application requires Administrator p...
+   50399 Jan 12 11:44  Information WindowsNetworkMan...            1 Note: Could not detect local IP addresses for n...
+   50398 Jan 12 11:44  Information WindowsNetworkMan...            1 Starting web server on http://localhost:18080
+   50397 Jan 12 11:44  Information WindowsNetworkMan...            1 Windows Network Manager service starting...
+   50386 Jan 12 11:42  Information WindowsNetworkMan...            1 Windows Network Manager service stopping...
+   50382 Jan 12 11:16  Information WindowsNetworkMan...            1 Note: Windows Firewall may need to allow incomi...
+   50381 Jan 12 11:16  Information WindowsNetworkMan...            1 Note: This application requires Administrator p...
+   50380 Jan 12 11:16  Information WindowsNetworkMan...            1   http://10.0.0.6:18080
+   50379 Jan 12 11:16  Information WindowsNetworkMan...            1 Web interface accessible from network at:
+   50378 Jan 12 11:16  Information WindowsNetworkMan...            1 Starting web server on http://localhost:18080
+   50377 Jan 12 11:16  Information WindowsNetworkMan...            1 Windows Network Manager service starting...
+   50376 Jan 12 11:16  Information WindowsNetworkMan...            1 Windows Network Manager service stopping...
+   50375 Jan 12 11:14  Information WindowsNetworkMan...            1 Note: Windows Firewall may need to allow incomi...
+   50374 Jan 12 11:14  Information WindowsNetworkMan...            1 Note: This application requires Administrator p...
+   50373 Jan 12 11:14  Information WindowsNetworkMan...            1   http://10.0.0.6:18080
+   50372 Jan 12 11:14  Information WindowsNetworkMan...            1 Web interface accessible from network at:
+   50371 Jan 12 11:14  Information WindowsNetworkMan...            1 Starting web server on http://localhost:18080
+   50370 Jan 12 11:14  Information WindowsNetworkMan...            1 Windows Network Manager service starting...
+   50367 Jan 12 11:09  Information WindowsNetworkMan...            1 Windows Network Manager service stopping...
+

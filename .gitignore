@@ -7,9 +7,6 @@
 *.mod.sum
 # Note: go.sum should be committed for reproducible builds
 
-# Local notes
-drafts.txt
-
 # IDE
 .vscode/
 .idea/
