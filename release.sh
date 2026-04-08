@@ -21,7 +21,9 @@ else
 fi
 
 DIST_DIR="dist"
+SCRIPTS_WIN="scripts/windows"
 ZIP_NAME="WindowsNetworkManager-v${VERSION}.zip"
+ZIP_PATH="$DIST_DIR/$ZIP_NAME"
 TAG_NAME="v${VERSION}"
 
 echo "========================================"
@@ -187,8 +189,9 @@ BATCH_FILES=(
 )
 
 for bat_file in "${BATCH_FILES[@]}"; do
-    if [ -f "$bat_file" ]; then
-        cp "$bat_file" "$DIST_DIR/"
+    src="$SCRIPTS_WIN/$bat_file"
+    if [ -f "$src" ]; then
+        cp "$src" "$DIST_DIR/"
         echo "✓ Copied $bat_file"
     fi
 done
@@ -197,9 +200,9 @@ echo ""
 # Create ZIP bundle
 echo "Creating release bundle..."
 cd "$DIST_DIR"
-zip -r "../$ZIP_NAME" . > /dev/null
+zip -r "../$ZIP_PATH" . > /dev/null
 cd ..
-echo "✓ Created $ZIP_NAME"
+echo "✓ Created $ZIP_PATH"
 echo ""
 
 # Show file sizes
@@ -207,7 +210,7 @@ echo "Release files in dist/:"
 ls -lh "$DIST_DIR"/
 echo ""
 echo "Release bundle:"
-ls -lh "$ZIP_NAME"
+ls -lh "$ZIP_PATH"
 echo ""
 
 # Check if gh CLI is installed
@@ -222,9 +225,9 @@ if ! command -v gh &> /dev/null; then
     echo ""
     echo "Then run:"
     echo "  gh auth login"
-    echo "  gh release create $TAG_NAME $ZIP_NAME --title \"Release $TAG_NAME\" --notes \"Windows Network Manager $VERSION\""
+    echo "  gh release create $TAG_NAME $ZIP_PATH --title \"Release $TAG_NAME\" --notes \"Windows Network Manager $VERSION\""
     echo ""
-    echo "Or manually upload $ZIP_NAME to:"
+    echo "Or manually upload $ZIP_PATH to:"
     echo "  https://github.com/hihanifm/WindowsNetworkManager/releases/new"
     echo ""
     exit 0
@@ -311,12 +314,12 @@ See [GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/) for quick 
 # Check if release exists
 if gh release view "$TAG_NAME" &> /dev/null; then
     echo "Release $TAG_NAME already exists. Uploading ZIP file..."
-    gh release upload "$TAG_NAME" "$ZIP_NAME" --clobber
+    gh release upload "$TAG_NAME" "$ZIP_PATH" --clobber
     echo "✓ ZIP file uploaded to existing release"
 else
     echo "Creating new release $TAG_NAME..."
     gh release create "$TAG_NAME" \
-        "$ZIP_NAME" \
+        "$ZIP_PATH" \
         --title "Release $TAG_NAME" \
         --notes "$RELEASE_NOTES"
     echo "✓ Release created and ZIP file uploaded"
@@ -338,5 +341,5 @@ echo "  - $DIST_DIR/web/ (index.html, static/app.js)"
 echo "  - $DIST_DIR/install_service.bat"
 echo "  - $DIST_DIR/uninstall_service.bat"
 echo "  - $DIST_DIR/configure_firewall.bat"
-echo "  - $ZIP_NAME"
+echo "  - $ZIP_PATH"
 echo ""

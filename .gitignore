@@ -7,6 +7,9 @@
 *.mod.sum
 # Note: go.sum should be committed for reproducible builds
 
+# Local notes
+drafts.txt
+
 # IDE
 .vscode/
 .idea/
@@ -32,6 +35,9 @@ windivert.h
 
 # Release artifacts (ZIP files are created by GitHub Actions and uploaded to Releases)
 release/
+# dist/ - sample web mirror + release ZIPs; batch files are copied in by build/CI
+dist/*.bat
+
 # dist/ - Allow dist folder to be committed
 # WindowsNetworkManager-v*.zip - Allow ZIP files in dist/ to be committed
 !dist/WindowsNetworkManager-v*.zip

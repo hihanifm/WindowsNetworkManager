@@ -281,15 +281,16 @@ WindowsNetworkManager/
 │   ├── browser.go           # Browser integration
 │   ├── Makefile             # Build system
 │   └── README.md            # Scanner documentation
+├── scripts/windows/         # Windows helper batch files (copied into release ZIP)
+├── docs/                    # SETUP, troubleshooting, development guides
 ├── web/
 │   ├── index.html           # Web interface
 │   └── static/
 │       └── app.js           # Frontend JavaScript
+├── dist/                    # Build output, release ZIPs (see .gitignore rules)
 ├── go.mod                   # Go dependencies
 ├── build.sh                 # macOS build script (cross-compile)
 ├── build.bat                # Windows build script
-├── install_service.bat      # Service installation script
-├── uninstall_service.bat    # Service uninstallation script
 └── README.md                # This file
 ```
 
@@ -377,7 +378,7 @@ By default, the upgrade system checks:
 
 ## Troubleshooting
 
-For detailed troubleshooting steps, see **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - A comprehensive guide covering firewall issues, WinDivert errors, service problems, network access, and more.
+For detailed troubleshooting steps, see **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - A comprehensive guide covering firewall issues, WinDivert errors, service problems, network access, and more.
 
 ### Quick Troubleshooting
 

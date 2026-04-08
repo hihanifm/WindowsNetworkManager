@@ -9,6 +9,7 @@ set -e
 
 VERSION="${1:-2.0.0}"
 RELEASE_DIR="release"
+SCRIPTS_WIN="scripts/windows"
 ZIP_NAME="WindowsNetworkManager-v${VERSION}.zip"
 
 echo "========================================"
@@ -94,8 +95,9 @@ BATCH_FILES=(
 )
 
 for bat_file in "${BATCH_FILES[@]}"; do
-    if [ -f "$bat_file" ]; then
-        cp "$bat_file" "$RELEASE_DIR/"
+    src="$SCRIPTS_WIN/$bat_file"
+    if [ -f "$src" ]; then
+        cp "$src" "$RELEASE_DIR/"
         echo "✓ Copied $bat_file"
     fi
 done
@@ -103,10 +105,11 @@ echo ""
 
 # Create ZIP bundle
 echo "Creating release bundle..."
+mkdir -p dist
 cd "$RELEASE_DIR"
-zip -r "../$ZIP_NAME" . > /dev/null
+zip -r "../dist/$ZIP_NAME" . > /dev/null
 cd ..
-echo "✓ Created $ZIP_NAME"
+echo "✓ Created dist/$ZIP_NAME"
 echo ""
 
 # Show file sizes
@@ -114,7 +117,7 @@ echo "Release files:"
 ls -lh "$RELEASE_DIR"/
 echo ""
 echo "Release bundle:"
-ls -lh "$ZIP_NAME"
+ls -lh "dist/$ZIP_NAME"
 echo ""
 
 echo "========================================"
@@ -133,6 +136,6 @@ echo "  - $ZIP_NAME"
 echo ""
 echo "To create a GitHub release:"
 echo "  1. Review the files in $RELEASE_DIR/"
-echo "  2. If satisfied, upload $ZIP_NAME to GitHub Releases"
-echo "  3. Or commit $ZIP_NAME and push (CI will upload it)"
+echo "  2. If satisfied, upload dist/$ZIP_NAME to GitHub Releases"
+echo "  3. Or commit dist/$ZIP_NAME and push (CI will upload it)"
 echo ""

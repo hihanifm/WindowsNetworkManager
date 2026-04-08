@@ -75,13 +75,7 @@ jobs:
             exit 1
           fi
           cp -r web dist/
-          cp install_service.bat dist/
-          cp uninstall_service.bat dist/
-          cp start_service.bat dist/
-          cp stop_service.bat dist/
-          cp configure_firewall.bat dist/
-          cp install_windivert_driver.bat dist/ || echo "Note: install_windivert_driver.bat not found (optional)"
-          cp reinstall_windivert_driver.bat dist/ || echo "Note: reinstall_windivert_driver.bat not found (optional)"
+          cp scripts/windows/*.bat dist/
           echo "✓ All files copied to dist directory"
           ls -lh dist/
 
