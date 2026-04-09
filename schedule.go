@@ -399,13 +399,13 @@ func (s *Scheduler) run() {
 						s.activeSession = &session
 						s.sessionMutex.Unlock()
 
-						// Set random delay between 1ms and max_delay_ms
+						// Set random delay uniformly in [50%, 100%] of max_delay_ms (inclusive)
 						s.configMutex.RLock()
 						maxDelayMs := s.config.MaxDelayMs
 						s.configMutex.RUnlock()
 
 						if maxDelayMs > 0 {
-							randomDelayMs := rand.Int63n(maxDelayMs) + 1 // 1 to maxDelayMs
+							randomDelayMs := randomDelayMsHalfToFull(maxDelayMs)
 							delay := time.Duration(randomDelayMs) * time.Millisecond
 
 							if packetEngine != nil {

@@ -204,6 +204,13 @@ func (pe *PacketEngine) GetRandomDelay() bool {
 	return pe.randomDelay
 }
 
+// randomDelayMsHalfToFull returns a uniform random delay in [ceil(maxMs/2), maxMs], inclusive.
+// Precondition: maxMs >= 1.
+func randomDelayMsHalfToFull(maxMs int64) int64 {
+	minMs := (maxMs + 1) / 2
+	return minMs + rand.Int63n(maxMs-minMs+1)
+}
+
 // Start begins packet interception and delay processing
 func (pe *PacketEngine) Start() {
 	log.Println("Starting packet interception engine...")
@@ -335,10 +342,10 @@ func (pe *PacketEngine) processPackets() {
 				// Calculate actual delay to apply
 				actualDelay := delay
 				if useRandomDelay {
-					// Generate random delay between 1ms and configured delay (inclusive)
+					// Random delay uniformly in [50%, 100%] of configured delay (inclusive ms)
 					delayMs := delay.Milliseconds()
 					if delayMs > 0 {
-						randomMs := rand.Int63n(delayMs) + 1 // 1 to delayMs (inclusive)
+						randomMs := randomDelayMsHalfToFull(delayMs)
 						actualDelay = time.Duration(randomMs) * time.Millisecond
 					}
 				}
