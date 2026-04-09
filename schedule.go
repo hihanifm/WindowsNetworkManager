@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"WindowsNetworkManager/sched"
 )
 
 // ScheduleConfig represents the schedule configuration
@@ -143,17 +145,9 @@ func (s *Scheduler) SetConfig(config ScheduleConfig) error {
 	return nil
 }
 
-// ParseTime parses a time string in "HH:MM" format
+// ParseTime parses a time string in "HH:MM" format (delegates to sched package).
 func ParseTime(timeStr string) (hour, minute int, err error) {
-	var h, m int
-	_, err = fmt.Sscanf(timeStr, "%d:%d", &h, &m)
-	if err != nil {
-		return 0, 0, fmt.Errorf("invalid time format: %s (expected HH:MM)", timeStr)
-	}
-	if h < 0 || h > 23 || m < 0 || m > 59 {
-		return 0, 0, fmt.Errorf("invalid time: %s (hour must be 0-23, minute must be 0-59)", timeStr)
-	}
-	return h, m, nil
+	return sched.ParseTime(timeStr)
 }
 
 // IsWithinSchedule checks if the current time is within the schedule
@@ -161,52 +155,7 @@ func (s *Scheduler) IsWithinSchedule(now time.Time) bool {
 	s.configMutex.RLock()
 	config := s.config
 	s.configMutex.RUnlock()
-
-	if !config.Enabled {
-		return false
-	}
-
-	// Check if current day is in schedule
-	// Go's time.Weekday: 0=Sunday, 1=Monday, ..., 6=Saturday (matches our config)
-	currentDay := int(now.Weekday())
-	
-	dayInSchedule := false
-	for _, day := range config.Days {
-		if day == currentDay {
-			dayInSchedule = true
-			break
-		}
-	}
-	if !dayInSchedule {
-		return false
-	}
-
-	// Check if current time is within time range
-	startHour, startMin, err := ParseTime(config.StartTime)
-	if err != nil {
-		log.Printf("[SCHEDULE] Error parsing start time: %v", err)
-		return false
-	}
-	endHour, endMin, err := ParseTime(config.EndTime)
-	if err != nil {
-		log.Printf("[SCHEDULE] Error parsing end time: %v", err)
-		return false
-	}
-
-	startTime := time.Date(now.Year(), now.Month(), now.Day(), startHour, startMin, 0, 0, now.Location())
-	endTime := time.Date(now.Year(), now.Month(), now.Day(), endHour, endMin, 0, 0, now.Location())
-
-	// Handle case where end time is next day (e.g., 22:00-02:00)
-	if endTime.Before(startTime) || endTime.Equal(startTime) {
-		endTime = endTime.Add(24 * time.Hour)
-		// If now is before startTime, we might be on the previous day's end period
-		if now.Before(startTime) {
-			startTime = startTime.Add(-24 * time.Hour)
-		}
-	}
-
-	// Check if now is within the time range
-	return (now.After(startTime) || now.Equal(startTime)) && (now.Before(endTime) || now.Equal(endTime))
+	return sched.WithinSchedule(config.Enabled, config.Days, config.StartTime, config.EndTime, now)
 }
 
 // planSessionsForHour plans random disruption sessions for the given hour
