@@ -140,6 +140,10 @@ func runScan(workers int, timeout time.Duration) {
 	}
 	scanMutex.Unlock()
 
+	instancesMutex.Lock()
+	instancesList = nil
+	instancesMutex.Unlock()
+
 	// Channel to signal scan completion so we can stop progress updates
 	scanComplete := make(chan struct{})
 	
@@ -164,8 +168,14 @@ func runScan(workers int, timeout time.Duration) {
 		scanMutex.Unlock()
 	}
 
+	onFound := func(inst InstanceInfo) {
+		instancesMutex.Lock()
+		instancesList = append(instancesList, inst)
+		instancesMutex.Unlock()
+	}
+
 	// Run the actual scan with progress callback
-	instances, err := ScanNetworkWithProgress(workers, timeout, progressCallback)
+	instances, err := ScanNetworkWithProgress(workers, timeout, progressCallback, onFound)
 
 	// Signal that scan is complete to stop progress callbacks
 	close(scanComplete)

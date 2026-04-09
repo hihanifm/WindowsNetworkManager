@@ -10,13 +10,16 @@ import (
 // ProgressCallback is a function type for reporting scan progress
 type ProgressCallback func(scanned, total, found int, message string)
 
+// FoundCallback is invoked for each discovered instance as the scan runs.
+type FoundCallback func(InstanceInfo)
+
 // ScanNetwork scans the local network for WindowsNetworkManager instances
 func ScanNetwork(workers int, timeout time.Duration) ([]InstanceInfo, error) {
-	return ScanNetworkWithProgress(workers, timeout, nil)
+	return ScanNetworkWithProgress(workers, timeout, nil, nil)
 }
 
 // ScanNetworkWithProgress scans the local network with progress reporting
-func ScanNetworkWithProgress(workers int, timeout time.Duration, progressCallback ProgressCallback) ([]InstanceInfo, error) {
+func ScanNetworkWithProgress(workers int, timeout time.Duration, progressCallback ProgressCallback, onFound FoundCallback) ([]InstanceInfo, error) {
 	subnets, err := getAllLocalSubnets()
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect local subnets: %v", err)
@@ -61,7 +64,7 @@ func ScanNetworkWithProgress(workers int, timeout time.Duration, progressCallbac
 			}
 		}
 
-		instances, err := scanIPRange(ipRange, DefaultPort, workers, timeout, subnetProgressCallback)
+		instances, err := scanIPRange(ipRange, DefaultPort, workers, timeout, subnetProgressCallback, onFound)
 		if err != nil {
 			if progressCallback != nil {
 				progressCallback(scannedIPs+len(ipRange), totalIPs, foundCount,
@@ -227,7 +230,7 @@ func parseSubnet(subnet string) ([]string, error) {
 }
 
 // scanIPRange scans a range of IP addresses in parallel
-func scanIPRange(ipRange []string, port int, workers int, timeout time.Duration, progressCallback ProgressCallback) ([]InstanceInfo, error) {
+func scanIPRange(ipRange []string, port int, workers int, timeout time.Duration, progressCallback ProgressCallback, onFound FoundCallback) ([]InstanceInfo, error) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var instances []InstanceInfo
@@ -289,13 +292,20 @@ func scanIPRange(ipRange []string, port int, workers int, timeout time.Duration,
 			defer wg.Done()
 			for ip := range ipChan {
 				instance, err := checkInstance(ip, port, timeout)
+				var foundInst InstanceInfo
+				var reportFound bool
 				mu.Lock()
 				scanned++
 				if err == nil && instance != nil {
 					instances = append(instances, *instance)
 					found++
+					foundInst = *instance
+					reportFound = true
 				}
 				mu.Unlock()
+				if reportFound && onFound != nil {
+					onFound(foundInst)
+				}
 			}
 		}()
 	}

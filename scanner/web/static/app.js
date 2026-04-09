@@ -25,6 +25,7 @@ function stopStatusPolling() {
 async function startScan() {
     const button = document.getElementById('scanButton');
     const status = document.getElementById('status');
+    const instancesEl = document.getElementById('instances');
     
     button.disabled = true;
     button.textContent = 'Scanning...';
@@ -33,6 +34,9 @@ async function startScan() {
     status.style.display = 'block';
     status.className = 'status scanning';
     status.innerHTML = '<strong>Scanning network...</strong><div class="progress">Initializing scan...</div>';
+    if (instancesEl) {
+        instancesEl.innerHTML = '<div class="no-instances">Scanning for instances…</div>';
+    }
 
     try {
         const response = await fetch('/api/scan', {
