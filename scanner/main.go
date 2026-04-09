@@ -144,16 +144,20 @@ func outputTable(instances []InstanceInfo) {
 	}
 
 	fmt.Printf("\nFound %d instance(s):\n\n", len(instances))
-	fmt.Printf("%-18s %-10s %-10s %s\n", "IP Address", "Status", "Delay (ms)", "URL")
-	fmt.Println("─────────────────────────────────────────────────────────────")
+	fmt.Printf("%-18s %-20s %-10s %-10s %s\n", "IP Address", "PC name", "Status", "Delay (ms)", "URL")
+	fmt.Println("────────────────────────────────────────────────────────────────────────────────────")
 
 	for _, inst := range instances {
 		status := "Stopped"
 		if inst.IsRunning {
 			status = "Running"
 		}
-		fmt.Printf("%-18s %-10s %-10d http://%s:%d\n",
-			inst.IP, status, inst.DelayMs, inst.IP, inst.Port)
+		host := inst.Hostname
+		if host == "" {
+			host = "—"
+		}
+		fmt.Printf("%-18s %-20s %-10s %-10d http://%s:%d\n",
+			inst.IP, host, status, inst.DelayMs, inst.IP, inst.Port)
 	}
 	fmt.Println()
 }

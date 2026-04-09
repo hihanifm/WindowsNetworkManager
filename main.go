@@ -720,6 +720,7 @@ func handleNetwork(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"local_ips": localIPs,
 		"port":      "18080",
+		"hostname":  machineHostname(),
 	})
 }
 
@@ -744,6 +745,7 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 		"version":      version.Version,
 		"port":         18080,
 		"local_ips":    localIPs,
+		"hostname":     machineHostname(),
 		"is_running":   running,
 		"delay_ms":     delayMs,
 		"random_delay": randomDelay,
@@ -904,6 +906,15 @@ func getLocalIPs() []string {
 	}
 
 	return ips
+}
+
+// machineHostname returns the OS hostname for identifying this PC in APIs and UIs.
+func machineHostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return h
 }
 
 // getStateFilePath returns the path to the state file

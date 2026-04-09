@@ -8,6 +8,7 @@ let pingStopRequested = false; // Flag to prevent multiple stop requests on unlo
 
 // Load current configuration on page load
 window.addEventListener('DOMContentLoaded', () => {
+    loadMachineIdentity();
     loadConfig();
     loadUpgradeInfo();
     loadSchedule();
@@ -97,6 +98,31 @@ window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('beforeunload', stopPingOnUnload);
     window.addEventListener('pagehide', stopPingOnUnload);
 });
+
+async function loadMachineIdentity() {
+    const el = document.getElementById('pcIdentity');
+    if (!el) return;
+    try {
+        const response = await fetch('/api/discover');
+        const data = await response.json();
+        const name = data.hostname ? String(data.hostname) : '';
+        const ips = Array.isArray(data.local_ips) ? data.local_ips.filter(Boolean) : [];
+        let text = '';
+        if (name && ips.length) {
+            text = 'This PC: ' + name + ' · LAN IP: ' + ips.join(', ');
+        } else if (name) {
+            text = 'This PC: ' + name;
+        } else if (ips.length) {
+            text = 'LAN IP: ' + ips.join(', ');
+        }
+        if (text) {
+            el.textContent = text;
+            el.hidden = false;
+        }
+    } catch (e) {
+        // Non-fatal: UI works without identity line
+    }
+}
 
 async function loadConfig() {
     try {

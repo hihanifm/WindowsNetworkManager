@@ -12,6 +12,7 @@ type InstanceInfo struct {
 	Port      int    `json:"port"`
 	Service   string `json:"service"`
 	Version   string `json:"version,omitempty"`
+	Hostname  string `json:"hostname,omitempty"`
 	IsRunning bool   `json:"is_running"`
 	DelayMs   int64  `json:"delay_ms"`
 	LocalIPs  []string `json:"local_ips,omitempty"`
@@ -20,6 +21,7 @@ type InstanceInfo struct {
 type DiscoverResponse struct {
 	Service    string   `json:"service"`
 	Version    string   `json:"version,omitempty"`
+	Hostname   string   `json:"hostname,omitempty"`
 	Port       int      `json:"port"`
 	LocalIPs   []string `json:"local_ips"`
 	IsRunning  bool     `json:"is_running"`
@@ -59,6 +61,7 @@ func checkInstance(ip string, port int, timeout time.Duration) (*InstanceInfo, e
 		Port:      port,
 		Service:   discoverResp.Service,
 		Version:   discoverResp.Version,
+		Hostname:  discoverResp.Hostname,
 		IsRunning: discoverResp.IsRunning,
 		DelayMs:   discoverResp.DelayMs,
 		LocalIPs:  discoverResp.LocalIPs,

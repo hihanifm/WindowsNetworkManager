@@ -1,6 +1,13 @@
 let refreshInterval;
 let isScanning = false;
 
+function escapeHtml(s) {
+    if (s == null || s === '') return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+
 // Load instances on page load
 window.addEventListener('DOMContentLoaded', () => {
     loadInstances();
@@ -216,7 +223,10 @@ function displayInstances(instances) {
     container.innerHTML = instances.map(inst => `
         <div class="instance-card">
             <div class="instance-header">
-                <div class="instance-ip">${inst.ip}</div>
+                <div>
+                    ${inst.hostname ? `<div class="instance-hostname">${escapeHtml(inst.hostname)}</div>` : ''}
+                    <div class="instance-ip">${escapeHtml(inst.ip)}</div>
+                </div>
                 <span class="instance-status ${inst.is_running ? 'status-running' : 'status-stopped'}">
                     ${inst.is_running ? 'Running' : 'Stopped'}
                 </span>

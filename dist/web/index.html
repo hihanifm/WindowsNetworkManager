@@ -41,6 +41,14 @@
             margin-bottom: 30px;
         }
 
+        .pc-identity {
+            color: #555;
+            font-size: 14px;
+            margin-top: -12px;
+            margin-bottom: 24px;
+            line-height: 1.4;
+        }
+
         .control-group {
             display: flex;
             gap: 15px;
@@ -453,6 +461,7 @@
         <div class="card">
             <h1>🌐 Windows Network Manager</h1>
             <p class="subtitle">Monitor and add latency to network packets</p>
+            <p class="pc-identity" id="pcIdentity" hidden></p>
 
             <div class="control-group">
                 <label for="delay">Delay (ms):</label>
