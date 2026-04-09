@@ -36,7 +36,7 @@ func isRunningAsAdmin() bool {
 }
 
 var (
-	currentDelay      time.Duration
+	configuredDelay   time.Duration
 	delayMutex        sync.RWMutex
 	useRandomDelay    bool
 	randomDelayMutex  sync.RWMutex
@@ -72,6 +72,7 @@ type PacketStats struct {
 
 type ConfigResponse struct {
 	DelayMs                 int64    `json:"delay_ms"`
+	ActiveDelayMs           int64    `json:"active_delay_ms"`
 	RandomDelay             bool     `json:"random_delay"`
 	IsRunning               bool     `json:"is_running"`
 	DurationMinutes         int64    `json:"duration_minutes,omitempty"`
@@ -93,10 +94,11 @@ type StateFile struct {
 }
 
 type StatsResponse struct {
-	TotalPackets   uint64  `json:"total_packets"`
-	DelayedPackets uint64  `json:"delayed_packets"`
-	BytesProcessed uint64  `json:"bytes_processed"`
-	UptimeSeconds  float64 `json:"uptime_seconds"`
+	TotalPackets    uint64  `json:"total_packets"`
+	DelayedPackets  uint64  `json:"delayed_packets"`
+	BytesProcessed  uint64  `json:"bytes_processed"`
+	UptimeSeconds   float64 `json:"uptime_seconds"`
+	ActiveDelayMs   int64   `json:"active_delay_ms"`
 }
 
 type LogEntry struct {
@@ -299,13 +301,24 @@ func serveIndex(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "./web/index.html")
 }
 
+// activeDelayMilliseconds returns the packet engine's applied delay, or 0 if not running.
+func activeDelayMilliseconds() int64 {
+	runningMutex.RLock()
+	running := isRunning
+	runningMutex.RUnlock()
+	if !running || packetEngine == nil {
+		return 0
+	}
+	return packetEngine.GetDelay().Milliseconds()
+}
+
 func handleConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	switch r.Method {
 	case "GET":
 		delayMutex.RLock()
-		delayMs := currentDelay.Milliseconds()
+		delayMs := configuredDelay.Milliseconds()
 		delayMutex.RUnlock()
 
 		randomDelayMutex.RLock()
@@ -347,6 +360,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		json.NewEncoder(w).Encode(ConfigResponse{
 			DelayMs:                 delayMs,
+			ActiveDelayMs:           activeDelayMilliseconds(),
 			RandomDelay:             randomDelay,
 			IsRunning:               running,
 			DurationMinutes:         durationMinutes,
@@ -379,9 +393,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Update delay
+		// Update configured delay
 		delayMutex.Lock()
-		currentDelay = time.Duration(req.DelayMs) * time.Millisecond
+		configuredDelay = time.Duration(req.DelayMs) * time.Millisecond
 		delayMutex.Unlock()
 
 		// Update random delay
@@ -406,7 +420,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		// Update delay and random delay mode in running packet engine
 		if packetEngine != nil {
-			packetEngine.SetDelay(currentDelay)
+			packetEngine.SetDelay(configuredDelay)
 			packetEngine.SetRandomDelay(req.RandomDelay)
 			log.Printf("[INFO] Delay and random delay mode updated in running packet engine")
 		} else {
@@ -425,6 +439,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		json.NewEncoder(w).Encode(ConfigResponse{
 			DelayMs:                 req.DelayMs,
+			ActiveDelayMs:           activeDelayMilliseconds(),
 			RandomDelay:             req.RandomDelay,
 			IsRunning:               running,
 			AutoRestartDelayMinutes: autoRestartDelay,
@@ -446,10 +461,11 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(stats.StartTime).Seconds()
 
 	json.NewEncoder(w).Encode(StatsResponse{
-		TotalPackets:   stats.TotalPackets,
-		DelayedPackets: stats.DelayedPackets,
-		BytesProcessed: stats.BytesProcessed,
-		UptimeSeconds:  uptime,
+		TotalPackets:    stats.TotalPackets,
+		DelayedPackets:  stats.DelayedPackets,
+		BytesProcessed:  stats.BytesProcessed,
+		UptimeSeconds:   uptime,
+		ActiveDelayMs:   activeDelayMilliseconds(),
 	})
 }
 
@@ -499,10 +515,11 @@ func handleStatsStream(w http.ResponseWriter, r *http.Request) {
 
 			// Create response
 			response := StatsResponse{
-				TotalPackets:   stats.TotalPackets,
-				DelayedPackets: stats.DelayedPackets,
-				BytesProcessed: stats.BytesProcessed,
-				UptimeSeconds:  uptime,
+				TotalPackets:    stats.TotalPackets,
+				DelayedPackets:  stats.DelayedPackets,
+				BytesProcessed:  stats.BytesProcessed,
+				UptimeSeconds:   uptime,
+				ActiveDelayMs:   activeDelayMilliseconds(),
 			}
 
 			// Marshal to JSON
@@ -554,7 +571,7 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		
 		// Update in-memory variables
 		delayMutex.Lock()
-		currentDelay = delay
+		configuredDelay = delay
 		delayMutex.Unlock()
 		
 		randomDelayMutex.Lock()
@@ -565,7 +582,7 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Failed to decode or empty body, use in-memory values as fallback
 		delayMutex.RLock()
-		delay = currentDelay
+		delay = configuredDelay
 		delayMutex.RUnlock()
 		
 		randomDelayMutex.RLock()
@@ -654,9 +671,15 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[WARN] Failed to save state: %v", err)
 	}
 
+	delayMutex.RLock()
+	cfgMs := configuredDelay.Milliseconds()
+	delayMutex.RUnlock()
+
 	json.NewEncoder(w).Encode(ConfigResponse{
 		IsRunning:       true,
 		DurationMinutes: durationMinutes,
+		DelayMs:         cfgMs,
+		ActiveDelayMs:   activeDelayMilliseconds(),
 	})
 }
 
@@ -733,7 +756,7 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 	runningMutex.RUnlock()
 
 	delayMutex.RLock()
-	delayMs := currentDelay.Milliseconds()
+	delayMs := configuredDelay.Milliseconds()
 	delayMutex.RUnlock()
 
 	randomDelayMutex.RLock()
@@ -741,14 +764,15 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 	randomDelayMutex.RUnlock()
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service":      version.ServiceName,
-		"version":      version.Version,
-		"port":         18080,
-		"local_ips":    localIPs,
-		"hostname":     machineHostname(),
-		"is_running":   running,
-		"delay_ms":     delayMs,
-		"random_delay": randomDelay,
+		"service":           version.ServiceName,
+		"version":           version.Version,
+		"port":              18080,
+		"local_ips":         localIPs,
+		"hostname":          machineHostname(),
+		"is_running":        running,
+		"delay_ms":          delayMs,
+		"active_delay_ms":   activeDelayMilliseconds(),
+		"random_delay":      randomDelay,
 	})
 }
 
@@ -944,7 +968,7 @@ func saveState() error {
 	}
 
 	delayMutex.RLock()
-	delayMs := currentDelay.Milliseconds()
+	delayMs := configuredDelay.Milliseconds()
 	delayMutex.RUnlock()
 
 	randomDelayMutex.RLock()

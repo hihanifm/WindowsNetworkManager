@@ -266,10 +266,7 @@ func (s *Scheduler) Stop() {
 	s.currentHour = time.Time{}
 	s.currentHourMutex.Unlock()
 
-	// Reset delay
-	delayMutex.Lock()
-	currentDelay = 0
-	delayMutex.Unlock()
+	// Reset applied delay on engine only (configured delay unchanged)
 	if packetEngine != nil {
 		packetEngine.SetDelay(0)
 	}
@@ -354,9 +351,6 @@ func (s *Scheduler) run() {
 				s.sessionMutex.Unlock()
 
 				if hadActiveSession {
-					delayMutex.Lock()
-					currentDelay = 0
-					delayMutex.Unlock()
 					if packetEngine != nil {
 						packetEngine.SetDelay(0)
 					}
@@ -414,9 +408,6 @@ func (s *Scheduler) run() {
 							randomDelayMs := rand.Int63n(maxDelayMs) + 1 // 1 to maxDelayMs
 							delay := time.Duration(randomDelayMs) * time.Millisecond
 
-							delayMutex.Lock()
-							currentDelay = delay
-							delayMutex.Unlock()
 							if packetEngine != nil {
 								packetEngine.SetDelay(delay)
 							}
@@ -445,13 +436,10 @@ func (s *Scheduler) run() {
 				s.activeSession = nil
 				s.sessionMutex.Unlock()
 
-				delayMutex.Lock()
-				currentDelay = 0
-				delayMutex.Unlock()
 				if packetEngine != nil {
 					packetEngine.SetDelay(0)
 				}
-				
+
 				// Increment completed count
 				s.sessionsCompletedMutex.Lock()
 				s.sessionsCompleted++

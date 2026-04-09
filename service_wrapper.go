@@ -202,7 +202,7 @@ func (p *program) run() {
 				
 				// Restore saved delay and random delay settings
 				delayMutex.Lock()
-				currentDelay = time.Duration(state.DelayMs) * time.Millisecond
+				configuredDelay = time.Duration(state.DelayMs) * time.Millisecond
 				delayMutex.Unlock()
 				
 				randomDelayMutex.Lock()

@@ -124,6 +124,17 @@ async function loadMachineIdentity() {
     }
 }
 
+function refreshActiveDelayUI(isRunning, activeDelayMs) {
+    const span = document.getElementById('activeDelayValue');
+    if (!span) return;
+    if (!isRunning) {
+        span.textContent = '—';
+        return;
+    }
+    const n = typeof activeDelayMs === 'number' ? activeDelayMs : 0;
+    span.textContent = n + ' ms';
+}
+
 async function loadConfig() {
     try {
         const response = await fetch('/api/config');
@@ -133,6 +144,7 @@ async function loadConfig() {
         isServiceRunning = config.is_running || false;
         updateStatus(isServiceRunning);
         updateButtonStates(isServiceRunning);
+        refreshActiveDelayUI(isServiceRunning, config.active_delay_ms);
         
         // Handle duration fields
         if (config.duration_minutes) {
@@ -192,6 +204,8 @@ async function updateDelay() {
             } else {
                 stopStatsUpdates();
             }
+
+            refreshActiveDelayUI(isServiceRunning, result.active_delay_ms);
             
             console.log('Delay updated to', delayMs, 'ms');
         }
@@ -237,6 +251,7 @@ async function startInterception() {
             } else {
                 stopCountdown();
             }
+            refreshActiveDelayUI(true, result.active_delay_ms);
             showError(''); // Clear error
         }
     } catch (error) {
@@ -257,6 +272,7 @@ async function stopInterception() {
             updateButtonStates(false);
             stopStatsUpdates(); // Stop stats streaming when service stops
             stopCountdown(); // Stop countdown timer
+            refreshActiveDelayUI(false, 0);
             showError(''); // Clear error
         }
     } catch (error) {
@@ -330,6 +346,9 @@ function updateStatsDisplay(stats) {
     document.getElementById('delayedPackets').textContent = formatNumber(stats.delayed_packets);
     document.getElementById('bytesProcessed').textContent = formatBytes(stats.bytes_processed);
     document.getElementById('uptime').textContent = formatUptime(stats.uptime_seconds);
+    if (stats.active_delay_ms !== undefined) {
+        refreshActiveDelayUI(isServiceRunning, stats.active_delay_ms);
+    }
 }
 
 function formatNumber(num) {
