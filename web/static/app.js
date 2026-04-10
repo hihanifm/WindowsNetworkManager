@@ -632,12 +632,9 @@ async function startPing() {
         const result = await response.json();
         
         if (result.error) {
-            // If error says ping is already running, update UI state
+            // If error says ping is already running, sync UI from server
             if (result.error.includes('already running')) {
-                isPingRunning = true;
-                pingStopRequested = false; // Reset flag when ping is running
-                updatePingButtonStates(true);
-                startPingStream();
+                await loadPingStatus();
             }
             showError(result.error);
         } else {
@@ -665,7 +662,14 @@ async function stopPing() {
         const result = await response.json();
         
         if (result.error) {
-            showError(result.error);
+            if (result.error === 'Ping is not running') {
+                isPingRunning = false;
+                updatePingButtonStates(false);
+                stopPingStream();
+                showError('');
+            } else {
+                showError(result.error);
+            }
         } else {
             isPingRunning = false;
             updatePingButtonStates(false);
@@ -749,12 +753,13 @@ function updatePingButtonStates(isRunning) {
     
     if (isRunning) {
         pingBtn.disabled = true;
-        pingStopBtn.disabled = false;
         pingDomainInput.disabled = true;
     } else {
         pingBtn.disabled = false;
-        pingStopBtn.disabled = true;
         pingDomainInput.disabled = false;
+    }
+    if (pingStopBtn) {
+        pingStopBtn.disabled = false;
     }
 }
 
