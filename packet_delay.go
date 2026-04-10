@@ -27,6 +27,8 @@ type PacketEngine struct {
 	delayMutex          sync.RWMutex
 	randomDelay         bool
 	randomDelayMutex    sync.RWMutex
+	dropPercent         int
+	dropPercentMutex    sync.RWMutex
 	filteredDomains     []string
 	domainFilterEnabled bool
 	domainFilterMutex   sync.RWMutex
@@ -204,6 +206,47 @@ func (pe *PacketEngine) GetRandomDelay() bool {
 	return pe.randomDelay
 }
 
+// SetDropPercent sets packet loss percentage (0–100). Values are clamped.
+func (pe *PacketEngine) SetDropPercent(pct int) {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	pe.dropPercentMutex.Lock()
+	pe.dropPercent = pct
+	pe.dropPercentMutex.Unlock()
+}
+
+// GetDropPercent returns the current packet loss percentage (0–100).
+func (pe *PacketEngine) GetDropPercent() int {
+	pe.dropPercentMutex.RLock()
+	defer pe.dropPercentMutex.RUnlock()
+	return pe.dropPercent
+}
+
+func (pe *PacketEngine) packetByteLen(packet *godivert.Packet) uint64 {
+	if packet.Raw != nil {
+		return uint64(len(packet.Raw))
+	}
+	return 1500
+}
+
+// shouldApplyImpairment is true when delay or loss is active and the packet matches domain rules.
+func (pe *PacketEngine) shouldApplyImpairment(packet *godivert.Packet, delay time.Duration, dropPct int) bool {
+	if delay <= 0 && dropPct <= 0 {
+		return false
+	}
+	pe.domainFilterMutex.RLock()
+	filterEnabled := pe.domainFilterEnabled
+	pe.domainFilterMutex.RUnlock()
+	if !filterEnabled {
+		return true
+	}
+	return pe.matchesDomainFilter(packet)
+}
+
 // randomDelayMsHalfToFull returns a uniform random delay in [ceil(maxMs/2), maxMs], inclusive.
 // Precondition: maxMs >= 1.
 func randomDelayMsHalfToFull(maxMs int64) int64 {
@@ -319,30 +362,23 @@ func (pe *PacketEngine) processPackets() {
 				}
 			}
 
-			// Get current delay and random delay mode
 			delay := pe.GetDelay()
+			dropPct := pe.GetDropPercent()
 			useRandomDelay := pe.GetRandomDelay()
 
-			// Check if packet should be delayed based on domain filter
-			shouldDelay := true
-			if delay > 0 {
-				// If domain filtering is enabled, check if packet matches
-				pe.domainFilterMutex.RLock()
-				filterEnabled := pe.domainFilterEnabled
-				pe.domainFilterMutex.RUnlock()
-				
-				if filterEnabled {
-					// Only delay if packet matches filtered domains
-					shouldDelay = pe.matchesDomainFilter(packet)
-				}
-				// If domain filtering is disabled, delay all packets (backward compatible)
+			if !pe.shouldApplyImpairment(packet, delay, dropPct) {
+				pe.sendPacket(packet)
+				continue
 			}
 
-			if delay > 0 && shouldDelay {
-				// Calculate actual delay to apply
+			if dropPct > 0 && rand.Intn(100) < dropPct {
+				updateDropStats(1, pe.packetByteLen(packet))
+				continue
+			}
+
+			if delay > 0 {
 				actualDelay := delay
 				if useRandomDelay {
-					// Random delay uniformly in [50%, 100%] of configured delay (inclusive ms)
 					delayMs := delay.Milliseconds()
 					if delayMs > 0 {
 						randomMs := randomDelayMsHalfToFull(delayMs)
@@ -350,7 +386,6 @@ func (pe *PacketEngine) processPackets() {
 					}
 				}
 
-				// Queue packet for delayed sending
 				dp := &delayedPacket{
 					packet: packet,
 					sendAt: time.Now().Add(actualDelay),
@@ -358,14 +393,11 @@ func (pe *PacketEngine) processPackets() {
 
 				select {
 				case packetQueue <- dp:
-					// Packet queued successfully
 				default:
-					// Queue full, send immediately to avoid blocking
 					log.Println("Warning: Packet queue full, sending immediately")
 					pe.sendPacket(packet)
 				}
 			} else {
-				// No delay or packet doesn't match filter, send immediately
 				pe.sendPacket(packet)
 			}
 		}
@@ -385,12 +417,7 @@ func (pe *PacketEngine) sendPacket(packet *godivert.Packet) {
 	// Get packet length for statistics
 	// The packet structure may have Raw, Bytes, or Data field
 	// We'll use a safe approach to get the length
-	packetLen := uint64(1500) // Default estimate
-	if packet.Raw != nil {
-		packetLen = uint64(len(packet.Raw))
-	}
-
-	// Update statistics
+	packetLen := pe.packetByteLen(packet)
 	updateStats(1, packetLen)
 }
 

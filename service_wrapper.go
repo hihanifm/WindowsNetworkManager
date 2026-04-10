@@ -208,6 +208,17 @@ func (p *program) run() {
 				randomDelayMutex.Lock()
 				useRandomDelay = state.RandomDelay
 				randomDelayMutex.Unlock()
+
+				loss := state.PacketLossPercent
+				if loss < 0 {
+					loss = 0
+				}
+				if loss > 100 {
+					loss = 100
+				}
+				dropPercentMutex.Lock()
+				configuredDropPercent = loss
+				dropPercentMutex.Unlock()
 				
 				// Start packet interception
 				delay := time.Duration(state.DelayMs) * time.Millisecond
@@ -219,6 +230,7 @@ func (p *program) run() {
 				}
 				
 				packetEngine.SetRandomDelay(state.RandomDelay)
+				packetEngine.SetDropPercent(loss)
 				
 				runningMutex.Lock()
 				isRunning = true
@@ -231,7 +243,7 @@ func (p *program) run() {
 					serviceLogger.Error("Failed to save state after auto-start: ", err)
 				}
 				
-				serviceLogger.Infof("Packet interception auto-started successfully with delay=%dms, random_delay=%v", state.DelayMs, state.RandomDelay)
+				serviceLogger.Infof("Packet interception auto-started successfully with delay=%dms, random_delay=%v, packet_loss_percent=%d", state.DelayMs, state.RandomDelay, loss)
 			} else {
 				serviceLogger.Info("Packet interception already started manually, skipping auto-start")
 			}

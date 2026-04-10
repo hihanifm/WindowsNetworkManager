@@ -13,14 +13,68 @@ import (
 	"WindowsNetworkManager/sched"
 )
 
+// applyScheduledImpairmentToEngine sets delay/random/drop from schedule override or global profile.
+func applyScheduledImpairmentToEngine(s *Scheduler) {
+	if packetEngine == nil {
+		return
+	}
+	s.configMutex.RLock()
+	cfg := s.config
+	s.configMutex.RUnlock()
+
+	var d time.Duration
+	var r bool
+	var loss int
+	if cfg.ImpairmentOverride.Enabled {
+		d = time.Duration(cfg.ImpairmentOverride.DelayMs) * time.Millisecond
+		r = cfg.ImpairmentOverride.RandomDelay
+		loss = cfg.ImpairmentOverride.PacketLossPercent
+		if loss < 0 {
+			loss = 0
+		}
+		if loss > 100 {
+			loss = 100
+		}
+	} else {
+		delayMutex.RLock()
+		d = configuredDelay
+		delayMutex.RUnlock()
+		randomDelayMutex.RLock()
+		r = useRandomDelay
+		randomDelayMutex.RUnlock()
+		dropPercentMutex.RLock()
+		loss = configuredDropPercent
+		dropPercentMutex.RUnlock()
+	}
+	packetEngine.SetDelay(d)
+	packetEngine.SetRandomDelay(r)
+	packetEngine.SetDropPercent(loss)
+}
+
+func clearScheduledImpairmentOnEngine() {
+	if packetEngine == nil {
+		return
+	}
+	packetEngine.SetDelay(0)
+	packetEngine.SetDropPercent(0)
+}
+
+// ScheduleImpairmentOverride applies a custom impairment profile during scheduled sessions when Enabled is true.
+type ScheduleImpairmentOverride struct {
+	Enabled           bool  `json:"enabled"`
+	DelayMs           int64 `json:"delay_ms"`
+	RandomDelay       bool  `json:"random_delay"`
+	PacketLossPercent int   `json:"packet_loss_percent"`
+}
+
 // ScheduleConfig represents the schedule configuration
 type ScheduleConfig struct {
-	Enabled          bool   `json:"enabled"`
-	Days             []int  `json:"days"`                  // 0=Sunday, 1=Monday, ..., 6=Saturday
-	StartTime        string `json:"start_time"`            // Format: "HH:MM" (24-hour)
-	EndTime          string `json:"end_time"`              // Format: "HH:MM" (24-hour)
-	MaxDelayMs       int64  `json:"max_delay_ms"`          // Max delay for sessions
-	MaxSessionsPerHour int  `json:"max_sessions_per_hour"` // Max number of sessions per hour
+	Enabled              bool                       `json:"enabled"`
+	Days                 []int                      `json:"days"` // 0=Sunday, 1=Monday, ..., 6=Saturday
+	StartTime            string                     `json:"start_time"`
+	EndTime              string                     `json:"end_time"`
+	MaxSessionsPerHour   int                        `json:"max_sessions_per_hour"`
+	ImpairmentOverride   ScheduleImpairmentOverride `json:"impairment_override"`
 }
 
 // Session represents a scheduled disruption session
@@ -65,8 +119,13 @@ func NewScheduler() *Scheduler {
 			Days:               []int{1, 2, 3, 4, 5}, // Monday-Friday
 			StartTime:          "09:00",
 			EndTime:            "18:00",
-			MaxDelayMs:         1000,
 			MaxSessionsPerHour: 6,
+			ImpairmentOverride: ScheduleImpairmentOverride{
+				Enabled:           false,
+				DelayMs:           1000,
+				RandomDelay:       true,
+				PacketLossPercent: 0,
+			},
 		},
 	}
 }
@@ -87,17 +146,35 @@ func (s *Scheduler) LoadConfig() error {
 		return fmt.Errorf("failed to read schedule config: %v", err)
 	}
 
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("failed to unmarshal schedule config: %v", err)
+	}
+
 	var config ScheduleConfig
 	if err := json.Unmarshal(data, &config); err != nil {
 		return fmt.Errorf("failed to unmarshal schedule config: %v", err)
+	}
+
+	var legacyMaxDelay int64
+	if b, ok := raw["max_delay_ms"]; ok {
+		_ = json.Unmarshal(b, &legacyMaxDelay)
+	}
+	if !config.ImpairmentOverride.Enabled && legacyMaxDelay > 0 {
+		config.ImpairmentOverride = ScheduleImpairmentOverride{
+			Enabled:           true,
+			DelayMs:           legacyMaxDelay,
+			RandomDelay:       true,
+			PacketLossPercent: 0,
+		}
 	}
 
 	s.configMutex.Lock()
 	s.config = config
 	s.configMutex.Unlock()
 
-	log.Printf("[SCHEDULE] Loaded schedule config: enabled=%v, days=%v, time=%s-%s, max_delay=%dms, max_sessions_per_hour=%d",
-		config.Enabled, config.Days, config.StartTime, config.EndTime, config.MaxDelayMs, config.MaxSessionsPerHour)
+	log.Printf("[SCHEDULE] Loaded schedule config: enabled=%v, days=%v, time=%s-%s, max_sessions_per_hour=%d, impairment_override_enabled=%v",
+		config.Enabled, config.Days, config.StartTime, config.EndTime, config.MaxSessionsPerHour, config.ImpairmentOverride.Enabled)
 	return nil
 }
 
@@ -121,8 +198,8 @@ func (s *Scheduler) SaveConfig() error {
 		return fmt.Errorf("failed to write schedule config: %v", err)
 	}
 
-	log.Printf("[SCHEDULE] Saved schedule config: enabled=%v, days=%v, time=%s-%s, max_delay=%dms, max_sessions_per_hour=%d",
-		config.Enabled, config.Days, config.StartTime, config.EndTime, config.MaxDelayMs, config.MaxSessionsPerHour)
+	log.Printf("[SCHEDULE] Saved schedule config: enabled=%v, days=%v, time=%s-%s, max_sessions_per_hour=%d, impairment_override_enabled=%v",
+		config.Enabled, config.Days, config.StartTime, config.EndTime, config.MaxSessionsPerHour, config.ImpairmentOverride.Enabled)
 	return nil
 }
 
@@ -266,10 +343,7 @@ func (s *Scheduler) Stop() {
 	s.currentHour = time.Time{}
 	s.currentHourMutex.Unlock()
 
-	// Reset applied delay on engine only (configured delay unchanged)
-	if packetEngine != nil {
-		packetEngine.SetDelay(0)
-	}
+	clearScheduledImpairmentOnEngine()
 
 	log.Printf("[SCHEDULE] Scheduler stopped")
 }
@@ -351,9 +425,7 @@ func (s *Scheduler) run() {
 				s.sessionMutex.Unlock()
 
 				if hadActiveSession {
-					if packetEngine != nil {
-						packetEngine.SetDelay(0)
-					}
+					clearScheduledImpairmentOnEngine()
 					log.Printf("[SCHEDULE] Outside schedule, stopped active session")
 				}
 				plannedSessions = nil
@@ -399,20 +471,15 @@ func (s *Scheduler) run() {
 						s.activeSession = &session
 						s.sessionMutex.Unlock()
 
-						// Set random delay uniformly in [50%, 100%] of max_delay_ms (inclusive)
+						applyScheduledImpairmentToEngine(s)
 						s.configMutex.RLock()
-						maxDelayMs := s.config.MaxDelayMs
+						ov := s.config.ImpairmentOverride
 						s.configMutex.RUnlock()
-
-						if maxDelayMs > 0 {
-							randomDelayMs := randomDelayMsHalfToFull(maxDelayMs)
-							delay := time.Duration(randomDelayMs) * time.Millisecond
-
-							if packetEngine != nil {
-								packetEngine.SetDelay(delay)
-							}
-							log.Printf("[SCHEDULE] Session active: delay=%dms (until %s)", randomDelayMs, session.EndTime.Format("15:04:05"))
+						src := "global"
+						if ov.Enabled {
+							src = "override"
 						}
+						log.Printf("[SCHEDULE] Session active (%s impairment until %s)", src, session.EndTime.Format("15:04:05"))
 						break
 					} else {
 						// Session has ended, move to next
@@ -436,9 +503,7 @@ func (s *Scheduler) run() {
 				s.activeSession = nil
 				s.sessionMutex.Unlock()
 
-				if packetEngine != nil {
-					packetEngine.SetDelay(0)
-				}
+				clearScheduledImpairmentOnEngine()
 
 				// Increment completed count
 				s.sessionsCompletedMutex.Lock()

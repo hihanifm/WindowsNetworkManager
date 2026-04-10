@@ -57,6 +57,13 @@
             flex-wrap: wrap;
         }
 
+        .active-delay-hint {
+            flex-basis: 100%;
+            margin: -8px 0 0 0;
+            font-size: 14px;
+            color: #64748b;
+        }
+
         label {
             font-weight: 600;
             color: #333;
@@ -466,11 +473,15 @@
             <div class="control-group">
                 <label for="delay">Delay (ms):</label>
                 <input type="number" id="delay" min="0" max="10000" value="0">
+                <p class="active-delay-hint" id="activeDelayHint">Active delay: <span id="activeDelayValue">—</span></p>
                 <div class="checkbox-group">
                     <input type="checkbox" id="randomDelay">
                     <label for="randomDelay">Random Delay</label>
                 </div>
-                <button class="btn-primary" onclick="updateDelay()">Set Delay</button>
+                <label for="packetLoss">Packet loss (%):</label>
+                <input type="number" id="packetLoss" min="0" max="100" value="0" title="0–100; dropped packets are not delayed">
+                <p class="active-delay-hint" id="activeLossHint">Active packet loss: <span id="activeLossValue">—</span></p>
+                <button class="btn-primary" onclick="updateDelay()">Save profile</button>
                 <label for="duration">Duration (min, optional):</label>
                 <input type="number" id="duration" min="0" max="1440" value="0" placeholder="0 = unlimited">
                 <button class="btn-success" id="startBtn" onclick="startInterception()">Start</button>
@@ -483,7 +494,7 @@
 
             <div class="info-box">
                 <p><strong>⚠️ Important:</strong> This application requires Administrator privileges to intercept network packets.</p>
-                <p><strong>📝 Note:</strong> The delay is applied to all outbound network packets. Use with caution in production environments.</p>
+                <p><strong>📝 Note:</strong> Delay and packet loss apply only to <strong>outbound</strong> traffic. With domain filtering off, that is all captured outbound packets; with it on, only matching domains (HTTP Host / TLS SNI). High loss without filtering can break DNS and connectivity.</p>
             </div>
 
             <div class="upgrade-section">
@@ -565,20 +576,38 @@
             </div>
 
             <div class="control-group">
-                <label for="scheduleMaxDelay">Max Delay (ms):</label>
-                <input type="number" id="scheduleMaxDelay" min="1" max="10000" value="1000" style="width: 150px;">
                 <label for="scheduleMaxSessionsPerHour">Max Sessions Per Hour:</label>
                 <input type="number" id="scheduleMaxSessionsPerHour" min="2" max="60" value="6" style="width: 150px;">
             </div>
 
+            <div style="margin: 20px 0; padding: 15px; background: #f8fafc; border-radius: 8px;">
+                <div class="checkbox-group" style="margin-bottom: 12px;">
+                    <input type="checkbox" id="scheduleOverrideEnabled">
+                    <label for="scheduleOverrideEnabled">Use custom impairment during scheduled sessions</label>
+                </div>
+                <p style="color: #64748b; font-size: 14px; margin-bottom: 12px;">If unchecked, scheduled sessions use the main profile above (delay, random, packet loss).</p>
+                <div class="control-group" style="margin-bottom: 10px;">
+                    <label for="scheduleOverrideDelay">Delay (ms):</label>
+                    <input type="number" id="scheduleOverrideDelay" min="0" max="10000" value="1000" style="width: 120px;">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="scheduleOverrideRandom">
+                        <label for="scheduleOverrideRandom">Random delay</label>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label for="scheduleOverrideLoss">Packet loss (%):</label>
+                    <input type="number" id="scheduleOverrideLoss" min="0" max="100" value="0" style="width: 100px;">
+                </div>
+            </div>
+
             <div class="info-box" style="margin-top: 20px;">
-                <p><strong>📝 Note:</strong> The scheduler will randomly create between 50% and 100% of the configured max sessions per hour during the configured time range (e.g., if max is 10, it will randomly choose 5-10 sessions per hour). Each session lasts 2-5 minutes with random delays between 1ms and the configured max delay.</p>
+                <p><strong>📝 Note:</strong> The scheduler randomly picks between 50% and 100% of the configured max sessions per hour during the window. Each session lasts about 2–5 minutes. Impairment during a session follows the main profile or the custom schedule override above.</p>
             </div>
         </div>
 
         <div class="card">
             <h2>🌐 Domain Filter</h2>
-            <p class="subtitle">Delay packets only to specific domains (e.g., youtube.com, googlevideo.com). When disabled, all packets are delayed.</p>
+            <p class="subtitle">Limit delay and packet loss to specific domains (e.g., youtube.com). When disabled, impairment applies to all outbound packets (see note above).</p>
             
             <div class="control-group" style="margin-bottom: 20px;">
                 <div class="checkbox-group">
@@ -599,12 +628,12 @@
             <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 10px; font-weight: 600;">Filtered Domains:</label>
                 <div id="domainList" style="min-height: 50px; padding: 10px; background: #f8fafc; border-radius: 6px;">
-                    <p style="color: #666; font-style: italic;">No domains configured. All packets will be delayed when filter is disabled.</p>
+                    <p style="color: #666; font-style: italic;">No domains configured. When the filter is off, impairment applies to all outbound packets.</p>
                 </div>
             </div>
 
             <div class="info-box" style="margin-top: 20px;">
-                <p><strong>📝 Note:</strong> Domain filtering works by inspecting HTTP Host headers (port 80) and TLS SNI (port 443). Traffic on other ports or without SNI may not be filtered. When domain filtering is enabled, only packets matching the configured domains will be delayed.</p>
+                <p><strong>📝 Note:</strong> Domain filtering uses HTTP Host (port 80) and TLS SNI (port 443). Other ports are not matched. When enabled, only matching packets receive delay and packet loss.</p>
             </div>
         </div>
 
@@ -618,6 +647,10 @@
                 <div class="stat-card">
                     <div class="stat-label">Delayed Packets</div>
                     <div class="stat-value" id="delayedPackets">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Dropped Packets</div>
+                    <div class="stat-value" id="droppedPackets">0</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Bytes Processed</div>
@@ -661,7 +694,7 @@
                     <label for="pingDomain">Domain:</label>
                     <input type="text" id="pingDomain" placeholder="e.g., google.com" value="google.com">
                     <button class="btn-primary" id="pingBtn">Ping</button>
-                    <button class="btn-danger" id="pingStopBtn" disabled>Stop</button>
+                    <button class="btn-danger" id="pingStopBtn">Stop</button>
                 </div>
                 
                 <div id="pingResults" class="ping-results"></div>

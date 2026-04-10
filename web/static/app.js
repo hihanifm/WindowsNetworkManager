@@ -135,16 +135,30 @@ function refreshActiveDelayUI(isRunning, activeDelayMs) {
     span.textContent = n + ' ms';
 }
 
+function refreshActiveLossUI(isRunning, activeLossPct) {
+    const span = document.getElementById('activeLossValue');
+    if (!span) return;
+    if (!isRunning) {
+        span.textContent = '—';
+        return;
+    }
+    const n = typeof activeLossPct === 'number' ? activeLossPct : 0;
+    span.textContent = n + '%';
+}
+
 async function loadConfig() {
     try {
         const response = await fetch('/api/config');
         const config = await response.json();
         document.getElementById('delay').value = config.delay_ms || 0;
         document.getElementById('randomDelay').checked = config.random_delay || false;
+        const pl = document.getElementById('packetLoss');
+        if (pl) pl.value = config.packet_loss_percent != null ? config.packet_loss_percent : 0;
         isServiceRunning = config.is_running || false;
         updateStatus(isServiceRunning);
         updateButtonStates(isServiceRunning);
         refreshActiveDelayUI(isServiceRunning, config.active_delay_ms);
+        refreshActiveLossUI(isServiceRunning, config.active_packet_loss_percent);
         
         // Handle duration fields
         if (config.duration_minutes) {
@@ -172,9 +186,14 @@ async function loadConfig() {
 async function updateDelay() {
     const delayMs = parseInt(document.getElementById('delay').value);
     const randomDelay = document.getElementById('randomDelay').checked;
+    const packetLossPercent = parseInt(document.getElementById('packetLoss').value, 10);
     
     if (isNaN(delayMs) || delayMs < 0 || delayMs > 10000) {
         showError('Delay must be between 0 and 10000 milliseconds');
+        return;
+    }
+    if (isNaN(packetLossPercent) || packetLossPercent < 0 || packetLossPercent > 100) {
+        showError('Packet loss must be between 0 and 100 percent');
         return;
     }
 
@@ -184,7 +203,7 @@ async function updateDelay() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ delay_ms: delayMs, random_delay: randomDelay })
+            body: JSON.stringify({ delay_ms: delayMs, random_delay: randomDelay, packet_loss_percent: packetLossPercent })
         });
 
         const result = await response.json();
@@ -206,8 +225,9 @@ async function updateDelay() {
             }
 
             refreshActiveDelayUI(isServiceRunning, result.active_delay_ms);
+            refreshActiveLossUI(isServiceRunning, result.active_packet_loss_percent);
             
-            console.log('Delay updated to', delayMs, 'ms');
+            console.log('Profile updated: delay', delayMs, 'ms, loss', packetLossPercent, '%');
         }
     } catch (error) {
         showError('Failed to update delay: ' + error.message);
@@ -219,11 +239,13 @@ async function startInterception() {
         // Always read latest values from screen (delay, random delay, duration)
         const delayMs = parseInt(document.getElementById('delay').value) || 0;
         const randomDelay = document.getElementById('randomDelay').checked;
+        const packetLossPercent = parseInt(document.getElementById('packetLoss').value, 10);
         const durationMinutes = parseInt(document.getElementById('duration').value) || 0;
         
         const requestBody = {
             delay_ms: delayMs,
-            random_delay: randomDelay
+            random_delay: randomDelay,
+            packet_loss_percent: isNaN(packetLossPercent) ? 0 : Math.min(100, Math.max(0, packetLossPercent))
         };
         if (durationMinutes > 0) {
             requestBody.duration_minutes = durationMinutes;
@@ -252,6 +274,7 @@ async function startInterception() {
                 stopCountdown();
             }
             refreshActiveDelayUI(true, result.active_delay_ms);
+            refreshActiveLossUI(true, result.active_packet_loss_percent);
             showError(''); // Clear error
         }
     } catch (error) {
@@ -273,6 +296,7 @@ async function stopInterception() {
             stopStatsUpdates(); // Stop stats streaming when service stops
             stopCountdown(); // Stop countdown timer
             refreshActiveDelayUI(false, 0);
+            refreshActiveLossUI(false, 0);
             showError(''); // Clear error
         }
     } catch (error) {
@@ -344,6 +368,8 @@ function stopStatsUpdates() {
 function updateStatsDisplay(stats) {
     document.getElementById('totalPackets').textContent = formatNumber(stats.total_packets);
     document.getElementById('delayedPackets').textContent = formatNumber(stats.delayed_packets);
+    const dropEl = document.getElementById('droppedPackets');
+    if (dropEl) dropEl.textContent = formatNumber(stats.dropped_packets || 0);
     document.getElementById('bytesProcessed').textContent = formatBytes(stats.bytes_processed);
     document.getElementById('uptime').textContent = formatUptime(stats.uptime_seconds);
     if (stats.active_delay_ms !== undefined) {
@@ -804,8 +830,13 @@ async function loadSchedule() {
         document.getElementById('scheduleEnabled').checked = schedule.enabled || false;
         document.getElementById('scheduleStartTime').value = schedule.start_time || '09:00';
         document.getElementById('scheduleEndTime').value = schedule.end_time || '18:00';
-        document.getElementById('scheduleMaxDelay').value = schedule.max_delay_ms || 1000;
         document.getElementById('scheduleMaxSessionsPerHour').value = schedule.max_sessions_per_hour || 6;
+
+        const ov = schedule.impairment_override || {};
+        document.getElementById('scheduleOverrideEnabled').checked = !!ov.enabled;
+        document.getElementById('scheduleOverrideDelay').value = ov.delay_ms != null ? ov.delay_ms : 1000;
+        document.getElementById('scheduleOverrideRandom').checked = ov.random_delay !== false;
+        document.getElementById('scheduleOverrideLoss').value = ov.packet_loss_percent != null ? ov.packet_loss_percent : 0;
         
         // Set day checkboxes
         if (schedule.days && Array.isArray(schedule.days)) {
@@ -836,8 +867,11 @@ async function saveSchedule() {
         const enabled = document.getElementById('scheduleEnabled').checked;
         const startTime = document.getElementById('scheduleStartTime').value;
         const endTime = document.getElementById('scheduleEndTime').value;
-        const maxDelayMs = parseInt(document.getElementById('scheduleMaxDelay').value);
         const maxSessionsPerHour = parseInt(document.getElementById('scheduleMaxSessionsPerHour').value);
+        const overrideEnabled = document.getElementById('scheduleOverrideEnabled').checked;
+        const overrideDelay = parseInt(document.getElementById('scheduleOverrideDelay').value, 10);
+        const overrideRandom = document.getElementById('scheduleOverrideRandom').checked;
+        const overrideLoss = parseInt(document.getElementById('scheduleOverrideLoss').value, 10);
         
         // Get selected days
         const days = [];
@@ -853,11 +887,17 @@ async function saveSchedule() {
             return;
         }
         
-        if (isNaN(maxDelayMs) || maxDelayMs < 1 || maxDelayMs > 10000) {
-            showError('Max delay must be between 1 and 10000 milliseconds');
-            return;
+        if (overrideEnabled) {
+            if (isNaN(overrideDelay) || overrideDelay < 0 || overrideDelay > 10000) {
+                showError('Schedule override delay must be between 0 and 10000 milliseconds');
+                return;
+            }
+            if (isNaN(overrideLoss) || overrideLoss < 0 || overrideLoss > 100) {
+                showError('Schedule override packet loss must be between 0 and 100');
+                return;
+            }
         }
-        
+
         if (isNaN(maxSessionsPerHour) || maxSessionsPerHour < 2 || maxSessionsPerHour > 60) {
             showError('Max sessions per hour must be between 2 and 60');
             return;
@@ -868,8 +908,13 @@ async function saveSchedule() {
             days: days,
             start_time: startTime,
             end_time: endTime,
-            max_delay_ms: maxDelayMs,
-            max_sessions_per_hour: maxSessionsPerHour
+            max_sessions_per_hour: maxSessionsPerHour,
+            impairment_override: {
+                enabled: overrideEnabled,
+                delay_ms: overrideEnabled ? overrideDelay : 0,
+                random_delay: overrideRandom,
+                packet_loss_percent: overrideEnabled ? overrideLoss : 0
+            }
         };
         
         const response = await fetch('/api/schedule', {
@@ -1300,7 +1345,7 @@ async function loadDomainFilter() {
 function updateDomainList() {
     const domainList = document.getElementById('domainList');
     if (filteredDomainsList.length === 0) {
-        domainList.innerHTML = '<p style="color: #666; font-style: italic;">No domains configured. All packets will be delayed when filter is disabled.</p>';
+        domainList.innerHTML = '<p style="color: #666; font-style: italic;">No domains configured. When the filter is off, impairment applies to all outbound packets.</p>';
         return;
     }
     

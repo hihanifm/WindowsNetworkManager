@@ -36,11 +36,13 @@ func isRunningAsAdmin() bool {
 }
 
 var (
-	configuredDelay   time.Duration
-	delayMutex        sync.RWMutex
-	useRandomDelay    bool
-	randomDelayMutex  sync.RWMutex
-	packetStats       = &PacketStats{}
+	configuredDelay       time.Duration
+	delayMutex            sync.RWMutex
+	useRandomDelay        bool
+	randomDelayMutex      sync.RWMutex
+	configuredDropPercent int
+	dropPercentMutex      sync.RWMutex
+	packetStats           = &PacketStats{}
 	statsMutex        sync.RWMutex
 	isRunning         bool
 	runningMutex      sync.RWMutex
@@ -64,16 +66,19 @@ var (
 )
 
 type PacketStats struct {
-	TotalPackets   uint64    `json:"total_packets"`
-	DelayedPackets uint64    `json:"delayed_packets"`
-	BytesProcessed uint64    `json:"bytes_processed"`
-	StartTime      time.Time `json:"start_time"`
+	TotalPackets    uint64    `json:"total_packets"`
+	DelayedPackets  uint64    `json:"delayed_packets"`
+	DroppedPackets  uint64    `json:"dropped_packets"`
+	BytesProcessed  uint64    `json:"bytes_processed"`
+	StartTime       time.Time `json:"start_time"`
 }
 
 type ConfigResponse struct {
 	DelayMs                 int64    `json:"delay_ms"`
 	ActiveDelayMs           int64    `json:"active_delay_ms"`
 	RandomDelay             bool     `json:"random_delay"`
+	PacketLossPercent       int      `json:"packet_loss_percent"`
+	ActivePacketLossPercent int      `json:"active_packet_loss_percent"`
 	IsRunning               bool     `json:"is_running"`
 	DurationMinutes         int64    `json:"duration_minutes,omitempty"`
 	RemainingMinutes        float64  `json:"remaining_minutes,omitempty"`
@@ -88,6 +93,7 @@ type StateFile struct {
 	WasRunning              bool     `json:"was_running"`
 	DelayMs                 int64    `json:"delay_ms"`
 	RandomDelay             bool     `json:"random_delay"`
+	PacketLossPercent       int      `json:"packet_loss_percent"`
 	AutoRestartDelayMinutes int64    `json:"auto_restart_delay_minutes"`
 	FilteredDomains         []string `json:"filtered_domains,omitempty"`
 	DomainFilterEnabled     bool     `json:"domain_filter_enabled,omitempty"`
@@ -96,6 +102,7 @@ type StateFile struct {
 type StatsResponse struct {
 	TotalPackets    uint64  `json:"total_packets"`
 	DelayedPackets  uint64  `json:"delayed_packets"`
+	DroppedPackets  uint64  `json:"dropped_packets"`
 	BytesProcessed  uint64  `json:"bytes_processed"`
 	UptimeSeconds   float64 `json:"uptime_seconds"`
 	ActiveDelayMs   int64   `json:"active_delay_ms"`
@@ -312,6 +319,16 @@ func activeDelayMilliseconds() int64 {
 	return packetEngine.GetDelay().Milliseconds()
 }
 
+func activePacketLossPercent() int {
+	runningMutex.RLock()
+	running := isRunning
+	runningMutex.RUnlock()
+	if !running || packetEngine == nil {
+		return 0
+	}
+	return packetEngine.GetDropPercent()
+}
+
 func handleConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -324,6 +341,10 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		randomDelayMutex.RLock()
 		randomDelay := useRandomDelay
 		randomDelayMutex.RUnlock()
+
+		dropPercentMutex.RLock()
+		lossPct := configuredDropPercent
+		dropPercentMutex.RUnlock()
 
 		runningMutex.RLock()
 		running := isRunning
@@ -362,6 +383,8 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 			DelayMs:                 delayMs,
 			ActiveDelayMs:           activeDelayMilliseconds(),
 			RandomDelay:             randomDelay,
+			PacketLossPercent:       lossPct,
+			ActivePacketLossPercent: activePacketLossPercent(),
 			IsRunning:               running,
 			DurationMinutes:         durationMinutes,
 			RemainingMinutes:        remainingMinutes,
@@ -374,6 +397,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			DelayMs                 int64 `json:"delay_ms"`
 			RandomDelay             bool  `json:"random_delay"`
+			PacketLossPercent       int   `json:"packet_loss_percent"`
 			AutoRestartDelayMinutes int64 `json:"auto_restart_delay_minutes"`
 		}
 
@@ -383,12 +407,20 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf("[HTTP] POST /api/config - Setting delay to %d ms, random delay: %v", req.DelayMs, req.RandomDelay)
+		log.Printf("[HTTP] POST /api/config - Setting delay=%d ms, random_delay=%v, packet_loss_percent=%d", req.DelayMs, req.RandomDelay, req.PacketLossPercent)
 
 		if req.DelayMs < 0 || req.DelayMs > 10000 {
 			log.Printf("[ERROR] Invalid delay value: %d ms (must be 0-10000)", req.DelayMs)
 			json.NewEncoder(w).Encode(ConfigResponse{
 				Error: "Delay must be between 0 and 10000 milliseconds",
+			})
+			return
+		}
+
+		if req.PacketLossPercent < 0 || req.PacketLossPercent > 100 {
+			log.Printf("[ERROR] Invalid packet loss: %d (must be 0-100)", req.PacketLossPercent)
+			json.NewEncoder(w).Encode(ConfigResponse{
+				Error: "Packet loss percent must be between 0 and 100",
 			})
 			return
 		}
@@ -402,6 +434,10 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		randomDelayMutex.Lock()
 		useRandomDelay = req.RandomDelay
 		randomDelayMutex.Unlock()
+
+		dropPercentMutex.Lock()
+		configuredDropPercent = req.PacketLossPercent
+		dropPercentMutex.Unlock()
 
 		// Update auto-restart delay if provided
 		if req.AutoRestartDelayMinutes > 0 {
@@ -418,16 +454,17 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[INFO] Auto-restart delay updated to %d minutes", req.AutoRestartDelayMinutes)
 		}
 
-		// Update delay and random delay mode in running packet engine
+		// Update impairment profile in running packet engine
 		if packetEngine != nil {
 			packetEngine.SetDelay(configuredDelay)
 			packetEngine.SetRandomDelay(req.RandomDelay)
-			log.Printf("[INFO] Delay and random delay mode updated in running packet engine")
+			packetEngine.SetDropPercent(configuredDropPercent)
+			log.Printf("[INFO] Impairment profile updated in running packet engine")
 		} else {
-			log.Printf("[INFO] Delay and random delay mode will be applied when packet interception starts")
+			log.Printf("[INFO] Impairment profile will be applied when packet interception starts")
 		}
 
-		log.Printf("[INFO] Delay updated to %d ms, random delay: %v", req.DelayMs, req.RandomDelay)
+		log.Printf("[INFO] Profile updated: delay=%d ms, random_delay=%v, packet_loss_percent=%d", req.DelayMs, req.RandomDelay, req.PacketLossPercent)
 
 		runningMutex.RLock()
 		running := isRunning
@@ -437,10 +474,16 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		autoRestartDelay := autoRestartDelayMinutes
 		autoRestartDelayMutex.RUnlock()
 
+		dropPercentMutex.RLock()
+		lossOut := configuredDropPercent
+		dropPercentMutex.RUnlock()
+
 		json.NewEncoder(w).Encode(ConfigResponse{
 			DelayMs:                 req.DelayMs,
 			ActiveDelayMs:           activeDelayMilliseconds(),
 			RandomDelay:             req.RandomDelay,
+			PacketLossPercent:       lossOut,
+			ActivePacketLossPercent: activePacketLossPercent(),
 			IsRunning:               running,
 			AutoRestartDelayMinutes: autoRestartDelay,
 		})
@@ -463,6 +506,7 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(StatsResponse{
 		TotalPackets:    stats.TotalPackets,
 		DelayedPackets:  stats.DelayedPackets,
+		DroppedPackets:  stats.DroppedPackets,
 		BytesProcessed:  stats.BytesProcessed,
 		UptimeSeconds:   uptime,
 		ActiveDelayMs:   activeDelayMilliseconds(),
@@ -517,6 +561,7 @@ func handleStatsStream(w http.ResponseWriter, r *http.Request) {
 			response := StatsResponse{
 				TotalPackets:    stats.TotalPackets,
 				DelayedPackets:  stats.DelayedPackets,
+				DroppedPackets:  stats.DroppedPackets,
 				BytesProcessed:  stats.BytesProcessed,
 				UptimeSeconds:   uptime,
 				ActiveDelayMs:   activeDelayMilliseconds(),
@@ -555,44 +600,58 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	// Parse request body for delay, random delay, and duration
 	// Always read latest values from request (frontend will send them)
 	var req struct {
-		DelayMs         int64 `json:"delay_ms"`
-		RandomDelay     bool  `json:"random_delay"`
-		DurationMinutes int64 `json:"duration_minutes"`
+		DelayMs           int64 `json:"delay_ms"`
+		RandomDelay       bool  `json:"random_delay"`
+		PacketLossPercent int   `json:"packet_loss_percent"`
+		DurationMinutes   int64 `json:"duration_minutes"`
 	}
 	
 	// Decode request body - if empty or decode fails, use in-memory values as fallback
 	var delay time.Duration
 	var randomDelay bool
+	var lossPct int
 	
 	if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
-		// Successfully decoded, use values from request and update in-memory state
 		delay = time.Duration(req.DelayMs) * time.Millisecond
 		randomDelay = req.RandomDelay
-		
-		// Update in-memory variables
+		lossPct = req.PacketLossPercent
+		if lossPct < 0 {
+			lossPct = 0
+		}
+		if lossPct > 100 {
+			lossPct = 100
+		}
+
 		delayMutex.Lock()
 		configuredDelay = delay
 		delayMutex.Unlock()
-		
+
 		randomDelayMutex.Lock()
 		useRandomDelay = randomDelay
 		randomDelayMutex.Unlock()
-		
-		log.Printf("[INFO] Using values from request: delay=%dms, random_delay=%v", req.DelayMs, randomDelay)
+
+		dropPercentMutex.Lock()
+		configuredDropPercent = lossPct
+		dropPercentMutex.Unlock()
+
+		log.Printf("[INFO] Using values from request: delay=%dms, random_delay=%v, packet_loss_percent=%d", req.DelayMs, randomDelay, lossPct)
 	} else {
-		// Failed to decode or empty body, use in-memory values as fallback
 		delayMutex.RLock()
 		delay = configuredDelay
 		delayMutex.RUnlock()
-		
+
 		randomDelayMutex.RLock()
 		randomDelay = useRandomDelay
 		randomDelayMutex.RUnlock()
-		
-		log.Printf("[INFO] Using in-memory values (request decode failed or empty): delay=%v, random_delay=%v", delay, randomDelay)
+
+		dropPercentMutex.RLock()
+		lossPct = configuredDropPercent
+		dropPercentMutex.RUnlock()
+
+		log.Printf("[INFO] Using in-memory values (request decode failed or empty): delay=%v, random_delay=%v, packet_loss_percent=%d", delay, randomDelay, lossPct)
 	}
 
-	log.Printf("Attempting to start packet interception with delay: %v, random delay: %v", delay, randomDelay)
+	log.Printf("Attempting to start packet interception: delay=%v, random_delay=%v, packet_loss_percent=%d", delay, randomDelay, lossPct)
 
 	// Start packet interception
 	var err error
@@ -609,8 +668,9 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set random delay mode
+	// Set random delay mode and packet loss
 	packetEngine.SetRandomDelay(randomDelay)
+	packetEngine.SetDropPercent(lossPct)
 
 	// Apply domain filter settings
 	domainFilterMutex.RLock()
@@ -675,11 +735,17 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	cfgMs := configuredDelay.Milliseconds()
 	delayMutex.RUnlock()
 
+	dropPercentMutex.RLock()
+	cfgLoss := configuredDropPercent
+	dropPercentMutex.RUnlock()
+
 	json.NewEncoder(w).Encode(ConfigResponse{
-		IsRunning:       true,
-		DurationMinutes: durationMinutes,
-		DelayMs:         cfgMs,
-		ActiveDelayMs:   activeDelayMilliseconds(),
+		IsRunning:               true,
+		DurationMinutes:         durationMinutes,
+		DelayMs:                 cfgMs,
+		ActiveDelayMs:           activeDelayMilliseconds(),
+		PacketLossPercent:       cfgLoss,
+		ActivePacketLossPercent: activePacketLossPercent(),
 	})
 }
 
@@ -763,16 +829,22 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 	randomDelay := useRandomDelay
 	randomDelayMutex.RUnlock()
 
+	dropPercentMutex.RLock()
+	lossPct := configuredDropPercent
+	dropPercentMutex.RUnlock()
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service":           version.ServiceName,
-		"version":           version.Version,
-		"port":              18080,
-		"local_ips":         localIPs,
-		"hostname":          machineHostname(),
-		"is_running":        running,
-		"delay_ms":          delayMs,
-		"active_delay_ms":   activeDelayMilliseconds(),
-		"random_delay":      randomDelay,
+		"service":                 version.ServiceName,
+		"version":                 version.Version,
+		"port":                    18080,
+		"local_ips":               localIPs,
+		"hostname":                machineHostname(),
+		"is_running":              running,
+		"delay_ms":                delayMs,
+		"active_delay_ms":         activeDelayMilliseconds(),
+		"random_delay":            randomDelay,
+		"packet_loss_percent":     lossPct,
+		"active_packet_loss_percent": activePacketLossPercent(),
 	})
 }
 
@@ -813,12 +885,6 @@ func handleSchedule(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Validate config
-		if req.MaxDelayMs < 1 || req.MaxDelayMs > 10000 {
-			http.Error(w, `{"error": "Max delay must be between 1 and 10000 milliseconds"}`, http.StatusBadRequest)
-			return
-		}
-
 		if req.MaxSessionsPerHour < 2 || req.MaxSessionsPerHour > 60 {
 			http.Error(w, `{"error": "Max sessions per hour must be between 2 and 60"}`, http.StatusBadRequest)
 			return
@@ -839,6 +905,17 @@ func handleSchedule(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if req.ImpairmentOverride.Enabled {
+			if req.ImpairmentOverride.DelayMs < 0 || req.ImpairmentOverride.DelayMs > 10000 {
+				http.Error(w, `{"error": "Impairment override delay must be between 0 and 10000 milliseconds"}`, http.StatusBadRequest)
+				return
+			}
+			if req.ImpairmentOverride.PacketLossPercent < 0 || req.ImpairmentOverride.PacketLossPercent > 100 {
+				http.Error(w, `{"error": "Impairment override packet loss must be between 0 and 100"}`, http.StatusBadRequest)
+				return
+			}
+		}
+
 		// Update config
 		if err := scheduler.SetConfig(req); err != nil {
 			log.Printf("[ERROR] Failed to save schedule config: %v", err)
@@ -846,8 +923,8 @@ func handleSchedule(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf("[HTTP] POST /api/schedule - Updated schedule: enabled=%v, days=%v, time=%s-%s, max_delay=%dms, max_sessions_per_hour=%d",
-			req.Enabled, req.Days, req.StartTime, req.EndTime, req.MaxDelayMs, req.MaxSessionsPerHour)
+		log.Printf("[HTTP] POST /api/schedule - Updated schedule: enabled=%v, days=%v, time=%s-%s, max_sessions_per_hour=%d, impairment_override=%v",
+			req.Enabled, req.Days, req.StartTime, req.EndTime, req.MaxSessionsPerHour, req.ImpairmentOverride.Enabled)
 
 		json.NewEncoder(w).Encode(req)
 
@@ -860,6 +937,13 @@ func updateStats(packets, bytes uint64) {
 	statsMutex.Lock()
 	packetStats.TotalPackets += packets
 	packetStats.DelayedPackets += packets
+	packetStats.BytesProcessed += bytes
+	statsMutex.Unlock()
+}
+
+func updateDropStats(packets, bytes uint64) {
+	statsMutex.Lock()
+	packetStats.DroppedPackets += packets
 	packetStats.BytesProcessed += bytes
 	statsMutex.Unlock()
 }
@@ -975,6 +1059,10 @@ func saveState() error {
 	randomDelay := useRandomDelay
 	randomDelayMutex.RUnlock()
 
+	dropPercentMutex.RLock()
+	lossPct := configuredDropPercent
+	dropPercentMutex.RUnlock()
+
 	autoRestartDelayMutex.RLock()
 	autoRestartDelay := autoRestartDelayMinutes
 	autoRestartDelayMutex.RUnlock()
@@ -989,6 +1077,7 @@ func saveState() error {
 		WasRunning:              true,
 		DelayMs:                 delayMs,
 		RandomDelay:             randomDelay,
+		PacketLossPercent:       lossPct,
 		AutoRestartDelayMinutes: autoRestartDelay,
 		FilteredDomains:         domains,
 		DomainFilterEnabled:     domainFilterEnabled,
@@ -1003,7 +1092,7 @@ func saveState() error {
 		return fmt.Errorf("failed to write state file: %v", err)
 	}
 
-	log.Printf("[STATE] Saved state: delay=%dms, random_delay=%v, auto_restart_delay=%dmin, domain_filter_enabled=%v, domains=%v", delayMs, randomDelay, autoRestartDelay, domainFilterEnabled, domains)
+	log.Printf("[STATE] Saved state: delay=%dms, random_delay=%v, packet_loss_percent=%d, auto_restart_delay=%dmin, domain_filter_enabled=%v, domains=%v", delayMs, randomDelay, lossPct, autoRestartDelay, domainFilterEnabled, domains)
 	return nil
 }
 
@@ -1036,8 +1125,19 @@ func loadState() (*StateFile, error) {
 		domainFilterMutex.Unlock()
 	}
 
-	log.Printf("[STATE] Loaded state: was_running=%v, delay=%dms, random_delay=%v, auto_restart_delay=%dmin, domain_filter_enabled=%v, domains=%v",
-		state.WasRunning, state.DelayMs, state.RandomDelay, state.AutoRestartDelayMinutes, state.DomainFilterEnabled, state.FilteredDomains)
+	loss := state.PacketLossPercent
+	if loss < 0 {
+		loss = 0
+	}
+	if loss > 100 {
+		loss = 100
+	}
+	dropPercentMutex.Lock()
+	configuredDropPercent = loss
+	dropPercentMutex.Unlock()
+
+	log.Printf("[STATE] Loaded state: was_running=%v, delay=%dms, random_delay=%v, packet_loss_percent=%d, auto_restart_delay=%dmin, domain_filter_enabled=%v, domains=%v",
+		state.WasRunning, state.DelayMs, state.RandomDelay, state.PacketLossPercent, state.AutoRestartDelayMinutes, state.DomainFilterEnabled, state.FilteredDomains)
 	return &state, nil
 }
 
