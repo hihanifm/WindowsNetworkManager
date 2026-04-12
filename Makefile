@@ -28,10 +28,10 @@ install-deps:
 	@go mod download
 	@echo "Dependencies installed!"
 
-# Run tests (if any)
+# Run tests (sched has tests; root package is Windows-only and breaks go test on non-Windows hosts)
 test:
 	@echo "Running tests..."
-	@go test ./...
+	@go test ./sched/...
 
 # Build release package (EXE + DLL + ZIP)
 release:
