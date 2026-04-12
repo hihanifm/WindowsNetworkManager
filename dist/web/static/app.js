@@ -493,7 +493,9 @@ async function checkForUpdates() {
         button.disabled = false;
         button.textContent = 'Check for Updates';
         
-        if (result.error) {
+        // Stale UpgradeStatus.error can persist from a prior failed check; trust a fresh success payload.
+        const staleErrorIgnored = result.update_available && result.latest_version;
+        if (result.error && !staleErrorIgnored) {
             updateInfo.style.display = 'block';
             updateInfo.className = 'error show';
             updateInfo.innerHTML = `<strong>Error:</strong> ${result.error}`;

@@ -159,6 +159,8 @@ func CheckForUpdates(updateURL string) (*UpgradeStatus, error) {
 
 	upgradeMutex.Lock()
 	upgradeStatus.Status = "idle"
+	upgradeStatus.Progress = ""
+	upgradeStatus.Error = ""
 	upgradeStatus.CurrentVersion = currentVer
 	upgradeStatus.LatestVersion = latestVersion
 	upgradeStatus.UpdateAvailable = updateAvailable
