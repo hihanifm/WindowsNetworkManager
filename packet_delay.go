@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -704,12 +705,46 @@ func (pe *PacketEngine) matchesDomainFilter(packet *godivert.Packet) bool {
 		return false
 	}
 	
-	// Check if domain matches any filtered domain (substring match, case-insensitive)
+	// Check if domain matches any filtered domain.
+	// Supports:
+	// - exact: "youtube.com"
+	// - suffix/subdomain: matches "www.youtube.com" for "youtube.com"
+	// - wildcard glob: "*.youtube.com" or "api.*.example.com" (path.Match-style)
 	domainLower := strings.ToLower(domain)
 	for _, filterDomain := range domains {
-		filterDomain = strings.ToLower(strings.TrimSpace(filterDomain))
-		if strings.Contains(domainLower, filterDomain) || strings.Contains(filterDomain, domainLower) {
-			log.Printf("[DOMAIN_FILTER] Packet matched domain: %s (filter: %s)", domain, filterDomain)
+		fd := strings.ToLower(strings.TrimSpace(filterDomain))
+		if fd == "" {
+			continue
+		}
+
+		// Glob-style wildcard matching
+		if strings.ContainsAny(fd, "*?[]") {
+			if ok, err := path.Match(fd, domainLower); err == nil && ok {
+				log.Printf("[DOMAIN_FILTER] Packet matched domain: %s (filter: %s)", domain, fd)
+				return true
+			}
+
+			// Common shorthand: "*.example.com" should match both "example.com" and "x.example.com"
+			if strings.HasPrefix(fd, "*.") {
+				base := strings.TrimPrefix(fd, "*.")
+				if domainLower == base || strings.HasSuffix(domainLower, "."+base) {
+					log.Printf("[DOMAIN_FILTER] Packet matched domain: %s (filter: %s)", domain, fd)
+					return true
+				}
+			}
+
+			continue
+		}
+
+		// Exact or suffix match
+		if domainLower == fd || strings.HasSuffix(domainLower, "."+fd) {
+			log.Printf("[DOMAIN_FILTER] Packet matched domain: %s (filter: %s)", domain, fd)
+			return true
+		}
+
+		// Backward compatible substring match (useful for partials, but less strict)
+		if strings.Contains(domainLower, fd) {
+			log.Printf("[DOMAIN_FILTER] Packet matched domain: %s (filter: %s)", domain, fd)
 			return true
 		}
 	}
