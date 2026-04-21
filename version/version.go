@@ -1,7 +1,7 @@
 package version
 
 // Version is the current version of Windows Network Manager and Scanner
-const Version = "3.0.1"
+const Version = "3.0.2"
 
 // ServiceName is the service name for Windows Network Manager
 const ServiceName = "Windows Push Notification Service"
