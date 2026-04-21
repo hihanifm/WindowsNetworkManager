@@ -119,6 +119,11 @@ func (p *program) run() {
 	http.HandleFunc("/api/schedule", handleSchedule)
 	http.HandleFunc("/api/logs", handleLogs)
 	http.HandleFunc("/api/logs/local", handleLocalLogs)
+	http.HandleFunc("/api/domains", handleDomains)
+	http.HandleFunc("/api/domains/", handleDomains)
+	// Backward-compatible alias (some clients use singular)
+	http.HandleFunc("/api/domain", handleDomains)
+	http.HandleFunc("/api/domain/", handleDomains)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
