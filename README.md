@@ -1,6 +1,6 @@
 # Windows Network Manager
 
-A Windows application with a web interface that monitors network traffic and adds configurable latency to network packets using WinDivert (user-mode).
+A Windows application with a web interface that monitors network traffic for analytics using WinDivert (user-mode).
 
 ## Features
 

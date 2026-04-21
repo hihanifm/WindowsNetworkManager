@@ -60,7 +60,7 @@ sc qc WindowsNetworkManager
 The service is configured with:
 - **Name**: `WindowsNetworkManager`
 - **Display Name**: `Windows Network Manager`
-- **Description**: `Monitors network traffic and adds configurable latency to network packets`
+- **Description**: `Monitors network traffic for analytics`
 - **Startup Type**: `Automatic` (starts on boot)
 - **Log On**: `Local System` account
 

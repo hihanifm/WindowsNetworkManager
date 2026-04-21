@@ -149,7 +149,7 @@ func main() {
 	svcConfig := &service.Config{
 		Name:        "WindowsNetworkManager",
 		DisplayName: "Windows Network Manager",
-		Description: "Monitors network traffic and adds configurable latency to network packets",
+		Description: "Monitors network traffic for analytics",
 		Executable:  exePath,
 	}
 
