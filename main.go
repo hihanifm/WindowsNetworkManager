@@ -36,10 +36,9 @@ func isRunningAsAdmin() bool {
 }
 
 var (
-	// Default impairment profile (used until user saves/loads a profile).
-	configuredDelay         time.Duration = 300 * time.Millisecond
+	configuredDelay         time.Duration
 	delayMutex              sync.RWMutex
-	useRandomDelay          bool = true
+	useRandomDelay          bool
 	randomDelayMutex        sync.RWMutex
 	configuredDropPercent   int
 	dropPercentMutex        sync.RWMutex
