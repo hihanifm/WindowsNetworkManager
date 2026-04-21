@@ -20,10 +20,8 @@ else
     VERSION="$1"
 fi
 
-DIST_DIR="dist"
+OUTPUT_DIR="output/release"
 SCRIPTS_WIN="scripts/windows"
-ZIP_NAME="WindowsNetworkManager-v${VERSION}.zip"
-ZIP_PATH="$DIST_DIR/$ZIP_NAME"
 TAG_NAME="v${VERSION}"
 
 echo "========================================"
@@ -32,13 +30,13 @@ echo "Version: $VERSION"
 echo "========================================"
 echo ""
 
-# Clean up previous dist
-rm -rf "$DIST_DIR"
-mkdir -p "$DIST_DIR"
+# Clean up previous output
+rm -rf "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
 
 # Build Windows executable
 echo "Building Windows executable..."
-GOOS=windows GOARCH=amd64 go build -v -o "$DIST_DIR/WindowsNetworkManager.exe" .
+GOOS=windows GOARCH=amd64 go build -v -o "$OUTPUT_DIR/WindowsNetworkManager.exe" .
 if [ $? -ne 0 ]; then
     echo "ERROR: Build failed"
     exit 1
@@ -52,11 +50,11 @@ DLL_FOUND=false
 
 # Try multiple locations
 if [ -f "vendor/windivert/WinDivert.dll" ]; then
-    cp vendor/windivert/WinDivert.dll "$DIST_DIR/WinDivert.dll"
+    cp vendor/windivert/WinDivert.dll "$OUTPUT_DIR/WinDivert.dll"
     echo "✓ Copied WinDivert.dll from vendor directory"
     DLL_FOUND=true
 elif [ -f "WinDivert.dll" ]; then
-    cp WinDivert.dll "$DIST_DIR/WinDivert.dll"
+    cp WinDivert.dll "$OUTPUT_DIR/WinDivert.dll"
     echo "✓ Copied WinDivert.dll from current directory"
     DLL_FOUND=true
 else
@@ -65,7 +63,7 @@ else
     if [ -n "$DOWNLOADS_DLL" ]; then
         mkdir -p vendor/windivert
         cp "$DOWNLOADS_DLL" vendor/windivert/WinDivert.dll
-        cp vendor/windivert/WinDivert.dll "$DIST_DIR/WinDivert.dll"
+        cp vendor/windivert/WinDivert.dll "$OUTPUT_DIR/WinDivert.dll"
         echo "✓ Found and copied WinDivert.dll from Downloads"
         DLL_FOUND=true
     fi
@@ -80,7 +78,7 @@ if [ "$DLL_FOUND" = false ]; then
         echo "Downloading WinDivert.dll from latest GitHub release..."
         mkdir -p vendor/windivert
         if gh release download --pattern "WinDivert.dll" --dir "vendor/windivert" 2>/dev/null; then
-            cp vendor/windivert/WinDivert.dll "$DIST_DIR/WinDivert.dll"
+            cp vendor/windivert/WinDivert.dll "$OUTPUT_DIR/WinDivert.dll"
             echo "✓ Downloaded and copied WinDivert.dll from GitHub release"
             DLL_FOUND=true
         fi
@@ -108,11 +106,11 @@ SYS_FOUND=false
 
 # Try multiple locations for WinDivert64.sys (64-bit is most common)
 if [ -f "vendor/windivert/WinDivert64.sys" ]; then
-    cp vendor/windivert/WinDivert64.sys "$DIST_DIR/WinDivert64.sys"
+    cp vendor/windivert/WinDivert64.sys "$OUTPUT_DIR/WinDivert64.sys"
     echo "✓ Copied WinDivert64.sys from vendor directory"
     SYS_FOUND=true
 elif [ -f "WinDivert64.sys" ]; then
-    cp WinDivert64.sys "$DIST_DIR/WinDivert64.sys"
+    cp WinDivert64.sys "$OUTPUT_DIR/WinDivert64.sys"
     echo "✓ Copied WinDivert64.sys from current directory"
     SYS_FOUND=true
 else
@@ -121,7 +119,7 @@ else
     if [ -n "$DOWNLOADS_SYS" ]; then
         mkdir -p vendor/windivert
         cp "$DOWNLOADS_SYS" vendor/windivert/WinDivert64.sys
-        cp vendor/windivert/WinDivert64.sys "$DIST_DIR/WinDivert64.sys"
+        cp vendor/windivert/WinDivert64.sys "$OUTPUT_DIR/WinDivert64.sys"
         echo "✓ Found and copied WinDivert64.sys from Downloads"
         SYS_FOUND=true
     fi
@@ -136,7 +134,7 @@ if [ "$SYS_FOUND" = false ]; then
         echo "Downloading WinDivert64.sys from latest GitHub release..."
         mkdir -p vendor/windivert
         if gh release download --pattern "WinDivert64.sys" --dir "vendor/windivert" 2>/dev/null; then
-            cp vendor/windivert/WinDivert64.sys "$DIST_DIR/WinDivert64.sys"
+            cp vendor/windivert/WinDivert64.sys "$OUTPUT_DIR/WinDivert64.sys"
             echo "✓ Downloaded and copied WinDivert64.sys from GitHub release"
             SYS_FOUND=true
         fi
@@ -161,7 +159,7 @@ echo ""
 # Copy web directory
 echo "Copying web interface files..."
 if [ -d "web" ]; then
-    cp -r web "$DIST_DIR/web"
+    cp -r web "$OUTPUT_DIR/web"
     echo "✓ Copied web directory (index.html, static/app.js)"
 else
     echo "ERROR: web directory not found"
@@ -191,26 +189,15 @@ BATCH_FILES=(
 for bat_file in "${BATCH_FILES[@]}"; do
     src="$SCRIPTS_WIN/$bat_file"
     if [ -f "$src" ]; then
-        cp "$src" "$DIST_DIR/"
+        cp "$src" "$OUTPUT_DIR/"
         echo "✓ Copied $bat_file"
     fi
 done
 echo ""
 
-# Create ZIP bundle
-echo "Creating release bundle..."
-cd "$DIST_DIR"
-zip -r "../$ZIP_PATH" . > /dev/null
-cd ..
-echo "✓ Created $ZIP_PATH"
-echo ""
-
 # Show file sizes
-echo "Release files in dist/:"
-ls -lh "$DIST_DIR"/
-echo ""
-echo "Release bundle:"
-ls -lh "$ZIP_PATH"
+echo "Release files in $OUTPUT_DIR/:"
+ls -lh "$OUTPUT_DIR"/
 echo ""
 
 # Check if gh CLI is installed
@@ -225,9 +212,10 @@ if ! command -v gh &> /dev/null; then
     echo ""
     echo "Then run:"
     echo "  gh auth login"
-    echo "  gh release create $TAG_NAME $ZIP_PATH --title \"Release $TAG_NAME\" --notes \"Windows Network Manager $VERSION\""
+    echo "  gh release create $TAG_NAME --title \"Release $TAG_NAME\" --notes \"Windows Network Manager $VERSION\""
+    echo "  gh release upload $TAG_NAME $OUTPUT_DIR/* --clobber"
     echo ""
-    echo "Or manually upload $ZIP_PATH to:"
+    echo "Or manually upload the files from $OUTPUT_DIR/ to:"
     echo "  https://github.com/hihanifm/WindowsNetworkManager/releases/new"
     echo ""
     exit 0
@@ -285,8 +273,8 @@ echo "Creating/updating GitHub Release..."
 RELEASE_NOTES="## Windows Network Manager $VERSION
 
             ### Installation
-            1. Download \`WindowsNetworkManager-v${VERSION}.zip\`
-            2. Extract the ZIP file
+            1. Download the release assets below
+            2. Place all files in the same folder (keep the \`web/\` folder as-is)
             3. Right-click \`install_service.bat\` → Run as Administrator
             4. Right-click \`start_service.bat\` → Run as Administrator (to start the service)
             5. Access web interface at http://localhost:18080
@@ -311,18 +299,36 @@ RELEASE_NOTES="## Windows Network Manager $VERSION
 ### Quick Install
 See [GitHub Pages](https://hihanifm.github.io/WindowsNetworkManager/) for quick installation instructions."
 
+# Build list of assets to upload
+ASSETS=(
+    "$OUTPUT_DIR/WindowsNetworkManager.exe"
+    "$OUTPUT_DIR/WinDivert.dll"
+    "$OUTPUT_DIR/WinDivert64.sys"
+)
+for bat_file in "${BATCH_FILES[@]}"; do
+    if [ -f "$OUTPUT_DIR/$bat_file" ]; then
+        ASSETS+=("$OUTPUT_DIR/$bat_file")
+    fi
+done
+if [ -f "$OUTPUT_DIR/web/index.html" ]; then
+    ASSETS+=("$OUTPUT_DIR/web/index.html#web-index.html")
+fi
+if [ -f "$OUTPUT_DIR/web/static/app.js" ]; then
+    ASSETS+=("$OUTPUT_DIR/web/static/app.js#web-static-app.js")
+fi
+
 # Check if release exists
 if gh release view "$TAG_NAME" &> /dev/null; then
-    echo "Release $TAG_NAME already exists. Uploading ZIP file..."
-    gh release upload "$TAG_NAME" "$ZIP_PATH" --clobber
-    echo "✓ ZIP file uploaded to existing release"
+    echo "Release $TAG_NAME already exists. Uploading assets..."
+    gh release upload "$TAG_NAME" "${ASSETS[@]}" --clobber
+    echo "✓ Assets uploaded to existing release"
 else
     echo "Creating new release $TAG_NAME..."
     gh release create "$TAG_NAME" \
-        "$ZIP_PATH" \
         --title "Release $TAG_NAME" \
         --notes "$RELEASE_NOTES"
-    echo "✓ Release created and ZIP file uploaded"
+    gh release upload "$TAG_NAME" "${ASSETS[@]}" --clobber
+    echo "✓ Release created and assets uploaded"
 fi
 
 echo ""
@@ -334,12 +340,9 @@ echo "Release URL:"
 echo "  https://github.com/hihanifm/WindowsNetworkManager/releases/tag/$TAG_NAME"
 echo ""
 echo "Files created:"
-echo "  - $DIST_DIR/WindowsNetworkManager.exe"
-echo "  - $DIST_DIR/WinDivert.dll"
-echo "  - $DIST_DIR/WinDivert64.sys"
-echo "  - $DIST_DIR/web/ (index.html, static/app.js)"
-echo "  - $DIST_DIR/install_service.bat"
-echo "  - $DIST_DIR/uninstall_service.bat"
-echo "  - $DIST_DIR/configure_firewall.bat"
-echo "  - $ZIP_PATH"
+echo "  - $OUTPUT_DIR/WindowsNetworkManager.exe"
+echo "  - $OUTPUT_DIR/WinDivert.dll"
+echo "  - $OUTPUT_DIR/WinDivert64.sys"
+echo "  - $OUTPUT_DIR/web/ (index.html, static/app.js)"
+echo "  - $OUTPUT_DIR/*.bat"
 echo ""

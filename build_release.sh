@@ -8,9 +8,8 @@
 set -e
 
 VERSION="${1:-2.0.0}"
-RELEASE_DIR="release"
+RELEASE_DIR="output/release"
 SCRIPTS_WIN="scripts/windows"
-ZIP_NAME="WindowsNetworkManager-v${VERSION}.zip"
 
 echo "========================================"
 echo "Building Windows Network Manager Release"
@@ -103,21 +102,9 @@ for bat_file in "${BATCH_FILES[@]}"; do
 done
 echo ""
 
-# Create ZIP bundle
-echo "Creating release bundle..."
-mkdir -p dist
-cd "$RELEASE_DIR"
-zip -r "../dist/$ZIP_NAME" . > /dev/null
-cd ..
-echo "✓ Created dist/$ZIP_NAME"
-echo ""
-
 # Show file sizes
 echo "Release files:"
 ls -lh "$RELEASE_DIR"/
-echo ""
-echo "Release bundle:"
-ls -lh "dist/$ZIP_NAME"
 echo ""
 
 echo "========================================"
@@ -132,10 +119,8 @@ echo "  - $RELEASE_DIR/web/ (index.html, static/app.js)"
 echo "  - $RELEASE_DIR/install_service.bat"
 echo "  - $RELEASE_DIR/uninstall_service.bat"
 echo "  - $RELEASE_DIR/configure_firewall.bat"
-echo "  - $ZIP_NAME"
 echo ""
-echo "To create a GitHub release:"
-echo "  1. Review the files in $RELEASE_DIR/"
-echo "  2. If satisfied, upload dist/$ZIP_NAME to GitHub Releases"
-echo "  3. Or commit dist/$ZIP_NAME and push (CI will upload it)"
+echo "Next:"
+echo "  - Commit/push output/release/ to GitHub"
+echo "  - Or run the .bat scripts from output/release/ on Windows"
 echo ""

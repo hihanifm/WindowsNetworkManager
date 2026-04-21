@@ -30,11 +30,14 @@ windivert.h
 !vendor/windivert/WinDivert.dll
 !vendor/windivert/WinDivert64.sys
 
-# Release artifacts (ZIP files are created by GitHub Actions and uploaded to Releases)
+# Release artifacts
 release/
-# dist/ - sample web mirror + release ZIPs; batch files are copied in by build/CI
-dist/*.bat
+dist/
 
-# dist/ - Allow dist folder to be committed
-# WindowsNetworkManager-v*.zip - Allow ZIP files in dist/ to be committed
-!dist/WindowsNetworkManager-v*.zip
+# Release output that we DO commit (run/install from here)
+output/*
+!output/release/
+!output/release/**
+!output/release/**/*.exe
+!output/release/**/*.dll
+!output/release/**/*.sys

@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Windows Network Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .pc-identity {
+            color: #555;
+            font-size: 14px;
+            margin-top: -12px;
+            margin-bottom: 24px;
+            line-height: 1.4;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .active-delay-hint {
+            flex-basis: 100%;
+            margin: -8px 0 0 0;
+            font-size: 14px;
+            color: #64748b;
+        }
+
+        label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        input[type="number"] {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            width: 150px;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #667eea;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-success:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-danger:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .status.running {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status.stopped {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            color: #333;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .info-box {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+        }
+
+        .info-box p {
+            color: #1e40af;
+            margin: 5px 0;
+        }
+
+        .upgrade-section {
+            margin-top: 20px;
+        }
+
+        .version-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+
+        .version-current {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .version-latest {
+            color: #666;
+        }
+
+        .upgrade-available {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .upgrade-progress {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .upgrade-progress.show {
+            display: block;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #10b981;
+            transition: width 0.3s;
+        }
+
+        .ping-section {
+            margin-top: 20px;
+        }
+
+        .ping-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        input[type="text"] {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            width: 250px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .ping-results {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-top: 10px;
+        }
+
+        .ping-results:empty::before {
+            content: "Ping results will appear here...";
+            color: #64748b;
+            font-style: italic;
+        }
+
+        .domain-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            margin: 5px 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .domain-item:hover {
+            background: #f8fafc;
+        }
+
+        .domain-name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .domain-remove {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .domain-remove:hover {
+            background: #dc2626;
+        }
+
+        .ping-result-line {
+            margin-bottom: 4px;
+        }
+
+        .ping-result-line.response {
+            color: #22c55e;
+        }
+
+        .ping-result-line.error {
+            color: #ef4444;
+        }
+
+        .ping-result-line.info {
+            color: #3b82f6;
+        }
+
+        .ping-timestamp {
+            color: #94a3b8;
+            margin-right: 8px;
+        }
+
+        .logs-section {
+            margin-top: 20px;
+        }
+
+        .logs-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .logs-container {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .logs-container:empty::before {
+            content: "No logs available. Click Refresh to load logs...";
+            color: #64748b;
+            font-style: italic;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-entry.info {
+            color: #3b82f6;
+        }
+
+        .log-entry.warning {
+            color: #f59e0b;
+        }
+
+        .log-entry.error {
+            color: #ef4444;
+        }
+
+        .log-timestamp {
+            color: #94a3b8;
+            margin-right: 8px;
+            font-weight: normal;
+        }
+
+        .log-level {
+            margin-right: 8px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .log-entry.info .log-level {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+        }
+
+        .log-entry.warning .log-level {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        .log-entry.error .log-level {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .log-message {
+            color: #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>🌐 Windows Network Manager</h1>
+            <p class="subtitle">Monitor and add latency to network packets</p>
+            <p class="pc-identity" id="pcIdentity" hidden></p>
+
+            <div class="control-group">
+                <label for="delay">Delay (ms):</label>
+                <input type="number" id="delay" min="0" max="10000" value="0">
+                <p class="active-delay-hint" id="activeDelayHint">Active delay: <span id="activeDelayValue">—</span></p>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="randomDelay">
+                    <label for="randomDelay">Random Delay</label>
+                </div>
+                <label for="packetLoss">Packet loss (%):</label>
+                <input type="number" id="packetLoss" min="0" max="100" value="0" title="0–100; dropped packets are not delayed">
+                <p class="active-delay-hint" id="activeLossHint">Active packet loss: <span id="activeLossValue">—</span></p>
+                <button class="btn-primary" onclick="updateDelay()">Save profile</button>
+                <label for="duration">Duration (min, optional):</label>
+                <input type="number" id="duration" min="0" max="1440" value="0" placeholder="0 = unlimited">
+                <button class="btn-success" id="startBtn" onclick="startInterception()">Start</button>
+                <button class="btn-danger" id="stopBtn" onclick="stopInterception()" disabled>Stop</button>
+                <span id="status" class="status stopped">Stopped</span>
+            </div>
+            <div id="remainingTime" style="display: none; margin-top: 10px; color: #666; font-size: 14px;"></div>
+
+            <div id="error" class="error"></div>
+
+            <div class="info-box">
+                <p><strong>⚠️ Important:</strong> This application requires Administrator privileges to intercept network packets.</p>
+                <p><strong>📝 Note:</strong> Delay and packet loss apply only to <strong>outbound</strong> traffic. With domain filtering off, that is all captured outbound packets; with it on, only matching domains (HTTP Host / TLS SNI). High loss without filtering can break DNS and connectivity.</p>
+            </div>
+
+            <div class="upgrade-section">
+                <h2>🔄 Updates</h2>
+                <div class="version-info">
+                    <div>
+                        <span class="version-current">Current Version: <span id="currentVersion">-</span></span>
+                    </div>
+                    <button class="btn-primary" id="checkUpdateBtn" onclick="checkForUpdates()">Check for Updates</button>
+                </div>
+                <div id="updateInfo" style="display: none;"></div>
+                <div id="upgradeProgress" class="upgrade-progress">
+                    <strong>Upgrade in Progress:</strong>
+                    <div id="upgradeStatusText" style="margin-top: 10px;"></div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>⏰ Scheduled Disruption</h2>
+            <p class="subtitle">Automatically create disruption sessions on specified days and times</p>
+            
+            <div class="control-group" style="margin-bottom: 20px;">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="scheduleEnabled">
+                    <label for="scheduleEnabled">Enable Schedule</label>
+                </div>
+                <button class="btn-primary" onclick="saveSchedule()">Save Schedule</button>
+            </div>
+
+            <div id="scheduleStatus" style="margin-bottom: 15px; padding: 10px; background: #f8fafc; border-radius: 6px; display: none;">
+                <div style="margin-bottom: 8px;"><strong>Status:</strong> <span id="scheduleStatusText">-</span></div>
+                <div style="margin-bottom: 4px;"><strong>Next Session:</strong> <span id="nextSessionTime">-</span></div>
+                <div><strong>Sessions Completed (this hour):</strong> <span id="sessionsCompleted">0</span></div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">Days:</label>
+                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day0" value="0">
+                        <label for="day0">Sunday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day1" value="1">
+                        <label for="day1">Monday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day2" value="2">
+                        <label for="day2">Tuesday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day3" value="3">
+                        <label for="day3">Wednesday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day4" value="4">
+                        <label for="day4">Thursday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day5" value="5">
+                        <label for="day5">Friday</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="day6" value="6">
+                        <label for="day6">Saturday</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group" style="margin-bottom: 20px;">
+                <label for="scheduleStartTime">Start Time:</label>
+                <input type="time" id="scheduleStartTime" style="width: 150px;">
+                <label for="scheduleEndTime">End Time:</label>
+                <input type="time" id="scheduleEndTime" style="width: 150px;">
+            </div>
+
+            <div class="control-group">
+                <label for="scheduleMaxSessionsPerHour">Max Sessions Per Hour:</label>
+                <input type="number" id="scheduleMaxSessionsPerHour" min="2" max="60" value="6" style="width: 150px;">
+            </div>
+
+            <div style="margin: 20px 0; padding: 15px; background: #f8fafc; border-radius: 8px;">
+                <div class="checkbox-group" style="margin-bottom: 12px;">
+                    <input type="checkbox" id="scheduleOverrideEnabled">
+                    <label for="scheduleOverrideEnabled">Use custom impairment during scheduled sessions</label>
+                </div>
+                <p style="color: #64748b; font-size: 14px; margin-bottom: 12px;">If unchecked, scheduled sessions use the main profile above (delay, random, packet loss).</p>
+                <div class="control-group" style="margin-bottom: 10px;">
+                    <label for="scheduleOverrideDelay">Delay (ms):</label>
+                    <input type="number" id="scheduleOverrideDelay" min="0" max="10000" value="1000" style="width: 120px;">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="scheduleOverrideRandom">
+                        <label for="scheduleOverrideRandom">Random delay</label>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label for="scheduleOverrideLoss">Packet loss (%):</label>
+                    <input type="number" id="scheduleOverrideLoss" min="0" max="100" value="0" style="width: 100px;">
+                </div>
+            </div>
+
+            <div class="info-box" style="margin-top: 20px;">
+                <p><strong>📝 Note:</strong> The scheduler randomly picks between 50% and 100% of the configured max sessions per hour during the window. Each session lasts about 2–5 minutes. Impairment during a session follows the main profile or the custom schedule override above.</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🌐 Domain Filter</h2>
+            <p class="subtitle">Limit delay and packet loss to specific domains (e.g., youtube.com). When disabled, impairment applies to all outbound packets (see note above).</p>
+            
+            <div class="control-group" style="margin-bottom: 20px;">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="domainFilterEnabled">
+                    <label for="domainFilterEnabled">Enable Domain Filtering</label>
+                </div>
+                <button class="btn-primary" onclick="saveDomainFilter()">Save Filter</button>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label for="newDomain" style="display: block; margin-bottom: 10px; font-weight: 600;">Add Domain:</label>
+                <div class="control-group">
+                    <input type="text" id="newDomain" placeholder="e.g., youtube.com" style="flex: 1; max-width: 400px;">
+                    <button class="btn-primary" onclick="addDomain()">Add</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">Filtered Domains:</label>
+                <div id="domainList" style="min-height: 50px; padding: 10px; background: #f8fafc; border-radius: 6px;">
+                    <p style="color: #666; font-style: italic;">No domains configured. When the filter is off, impairment applies to all outbound packets.</p>
+                </div>
+            </div>
+
+            <div class="info-box" style="margin-top: 20px;">
+                <p><strong>📝 Note:</strong> Domain filtering uses HTTP Host (port 80) and TLS SNI (port 443). Other ports are not matched. When enabled, only matching packets receive delay and packet loss.</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Packets</div>
+                    <div class="stat-value" id="totalPackets">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Delayed Packets</div>
+                    <div class="stat-value" id="delayedPackets">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Dropped Packets</div>
+                    <div class="stat-value" id="droppedPackets">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Bytes Processed</div>
+                    <div class="stat-value" id="bytesProcessed">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Uptime</div>
+                    <div class="stat-value" id="uptime">0s</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📋 Logs</h2>
+            <p class="subtitle">View recent log entries from this device</p>
+            
+            <div class="logs-section">
+                <div class="logs-controls">
+                    <button class="btn-primary" id="refreshLogsBtn">Refresh</button>
+                    <button class="btn-primary" id="viewLocalLogsBtn">View Local Logs</button>
+                </div>
+                
+                <div id="logsContainer" class="logs-container"></div>
+                <div id="logsError" class="error" style="display: none; margin-top: 10px;"></div>
+                
+                <div id="localLogsSection" style="display: none; margin-top: 20px;">
+                    <h3 style="margin-bottom: 10px; color: #333;">📁 Local Log Files</h3>
+                    <div id="localLogsFiles" style="margin-bottom: 15px;"></div>
+                    <div id="localLogsContent" class="logs-container" style="display: none;"></div>
+                    <div id="localLogsError" class="error" style="display: none; margin-top: 10px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🏓 Ping Test</h2>
+            <p class="subtitle">Test network connectivity and measure latency</p>
+            
+            <div class="ping-section">
+                <div class="ping-controls">
+                    <label for="pingDomain">Domain:</label>
+                    <input type="text" id="pingDomain" placeholder="e.g., google.com" value="google.com">
+                    <button class="btn-primary" id="pingBtn">Ping</button>
+                    <button class="btn-danger" id="pingStopBtn">Stop</button>
+                </div>
+                
+                <div id="pingResults" class="ping-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
+
