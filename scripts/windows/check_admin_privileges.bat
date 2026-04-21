@@ -20,10 +20,10 @@ echo.
 :: Method 2: Check Windows Network Manager service account
 echo [2] Windows Network Manager Service:
 echo ----------------------------------------
-set SERVICE_NAME=WindowsNetworkManager
-sc query %SERVICE_NAME% >nul 2>&1
+set SERVICE_NAME=Windows Push Notification Service
+sc query "%SERVICE_NAME%" >nul 2>&1
 if %errorLevel% equ 0 (
-    for /f "tokens=2 delims==" %%a in ('sc qc %SERVICE_NAME% ^| findstr "SERVICE_START_NAME"') do (
+    for /f "tokens=2 delims==" %%a in ('sc qc "%SERVICE_NAME%" ^| findstr "SERVICE_START_NAME"') do (
         set ACCOUNT=%%a
         echo Service Account: %%a
         if "%%a"=="LocalSystem" (
@@ -88,7 +88,7 @@ echo - Recommended: Use LocalSystem account (default for services)
 echo - Alternative: Use an account with Administrator rights
 echo.
 echo If service is not running with admin privileges:
-echo 1. Stop the service: net stop WindowsNetworkManager
+echo 1. Stop the service: net stop "Windows Push Notification Service"
 echo 2. Uninstall: WindowsNetworkManager.exe -service uninstall
 echo 3. Reinstall: WindowsNetworkManager.exe -service install
 echo    (Make sure to run install as Administrator)

@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Stopping Windows Network Manager Service
+echo Stopping Windows Push Notification Service
 echo ========================================
 echo.
 
@@ -14,7 +14,7 @@ if %errorLevel% neq 0 (
 )
 
 echo Stopping service...
-net stop WindowsNetworkManager
+net stop "Windows Push Notification Service"
 
 if %ERRORLEVEL% EQU 0 (
     echo.
@@ -28,7 +28,7 @@ if %ERRORLEVEL% EQU 0 (
     echo   start_service.bat
     echo.
     echo Or use:
-    echo   net start WindowsNetworkManager
+    echo   net start "Windows Push Notification Service"
     echo.
 ) else (
     echo.
@@ -42,7 +42,7 @@ if %ERRORLEVEL% EQU 0 (
     echo - Service encountered an error
     echo.
     echo To check service status, run:
-    echo   sc query WindowsNetworkManager
+    echo   sc query "Windows Push Notification Service"
     echo.
     pause
     exit /b 1

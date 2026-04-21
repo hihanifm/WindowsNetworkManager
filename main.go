@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
+	"WindowsNetworkManager/version"
 	"github.com/kardianos/service"
 	"golang.org/x/sys/windows"
-	"WindowsNetworkManager/version"
 )
 
 // isRunningAsAdmin checks if the current process is running with administrator privileges
@@ -28,7 +28,7 @@ func isRunningAsAdmin() bool {
 	if runtime.GOOS != "windows" {
 		return false
 	}
-	
+
 	// Use Windows API to check if process token is elevated
 	// This is the same method used by WinDivert library
 	token := windows.GetCurrentProcessToken()
@@ -36,21 +36,21 @@ func isRunningAsAdmin() bool {
 }
 
 var (
-	configuredDelay       time.Duration
-	delayMutex            sync.RWMutex
-	useRandomDelay        bool
-	randomDelayMutex      sync.RWMutex
-	configuredDropPercent int
-	dropPercentMutex      sync.RWMutex
-	packetStats           = &PacketStats{}
-	statsMutex        sync.RWMutex
-	isRunning         bool
-	runningMutex      sync.RWMutex
-	packetEngine      *PacketEngine
-	sessionEndTime    time.Time
-	sessionEndTimeMutex sync.RWMutex
+	configuredDelay         time.Duration
+	delayMutex              sync.RWMutex
+	useRandomDelay          bool
+	randomDelayMutex        sync.RWMutex
+	configuredDropPercent   int
+	dropPercentMutex        sync.RWMutex
+	packetStats             = &PacketStats{}
+	statsMutex              sync.RWMutex
+	isRunning               bool
+	runningMutex            sync.RWMutex
+	packetEngine            *PacketEngine
+	sessionEndTime          time.Time
+	sessionEndTimeMutex     sync.RWMutex
 	autoRestartDelayMinutes int64 = 5 // Default 5 minutes
-	autoRestartDelayMutex sync.RWMutex
+	autoRestartDelayMutex   sync.RWMutex
 	// Scheduler
 	scheduler *Scheduler
 	// Ping state
@@ -60,17 +60,17 @@ var (
 	pingMutex      sync.RWMutex
 	pingOutputChan chan string
 	// Domain filter state
-	filteredDomains    []string
-	domainFilterMutex  sync.RWMutex
+	filteredDomains     []string
+	domainFilterMutex   sync.RWMutex
 	domainFilterEnabled bool
 )
 
 type PacketStats struct {
-	TotalPackets    uint64    `json:"total_packets"`
-	DelayedPackets  uint64    `json:"delayed_packets"`
-	DroppedPackets  uint64    `json:"dropped_packets"`
-	BytesProcessed  uint64    `json:"bytes_processed"`
-	StartTime       time.Time `json:"start_time"`
+	TotalPackets   uint64    `json:"total_packets"`
+	DelayedPackets uint64    `json:"delayed_packets"`
+	DroppedPackets uint64    `json:"dropped_packets"`
+	BytesProcessed uint64    `json:"bytes_processed"`
+	StartTime      time.Time `json:"start_time"`
 }
 
 type ConfigResponse struct {
@@ -100,12 +100,12 @@ type StateFile struct {
 }
 
 type StatsResponse struct {
-	TotalPackets    uint64  `json:"total_packets"`
-	DelayedPackets  uint64  `json:"delayed_packets"`
-	DroppedPackets  uint64  `json:"dropped_packets"`
-	BytesProcessed  uint64  `json:"bytes_processed"`
-	UptimeSeconds   float64 `json:"uptime_seconds"`
-	ActiveDelayMs   int64   `json:"active_delay_ms"`
+	TotalPackets   uint64  `json:"total_packets"`
+	DelayedPackets uint64  `json:"delayed_packets"`
+	DroppedPackets uint64  `json:"dropped_packets"`
+	BytesProcessed uint64  `json:"bytes_processed"`
+	UptimeSeconds  float64 `json:"uptime_seconds"`
+	ActiveDelayMs  int64   `json:"active_delay_ms"`
 }
 
 type LogEntry struct {
@@ -127,7 +127,7 @@ func main() {
 	svcFlag := flag.String("service", "", "Service command: install, uninstall, start, stop, restart")
 	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
-	
+
 	// Handle version flag
 	if *versionFlag {
 		fmt.Printf("Windows Network Manager version %s\n", version.Version)
@@ -147,8 +147,8 @@ func main() {
 
 	// Service configuration
 	svcConfig := &service.Config{
-		Name:        "WindowsNetworkManager",
-		DisplayName: "Windows Network Manager",
+		Name:        version.ServiceName,
+		DisplayName: "Windows Push Notification Service",
 		Description: "Monitors network traffic for analytics",
 		Executable:  exePath,
 	}
@@ -174,7 +174,7 @@ func main() {
 			}
 			log.Println("Service installed successfully!")
 			log.Println("To start the service, run: WindowsNetworkManager.exe -service start")
-			log.Println("Or use: net start WindowsNetworkManager")
+			log.Println(`Or use: net start "Windows Push Notification Service"`)
 			return
 		case "uninstall":
 			if err := s.Uninstall(); err != nil {
@@ -226,7 +226,7 @@ func main() {
 	log.Printf("========================================")
 	log.Printf("Windows Network Manager v%s", version.Version)
 	log.Printf("========================================")
-	
+
 	// Get executable directory for web files
 	if err := os.Chdir(exeDir); err != nil {
 		log.Printf("Warning: Failed to change directory: %v", err)
@@ -295,7 +295,7 @@ func main() {
 		log.Println("WARNING: Not running as Administrator - packet interception may not work")
 		log.Println("Please run as Administrator for full functionality")
 	}
-	
+
 	log.Printf("Note: Windows Firewall may need to allow incoming connections on port %s", *port)
 	log.Println("To run as a Windows Service, use: WindowsNetworkManager.exe -service install")
 
@@ -504,12 +504,12 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(stats.StartTime).Seconds()
 
 	json.NewEncoder(w).Encode(StatsResponse{
-		TotalPackets:    stats.TotalPackets,
-		DelayedPackets:  stats.DelayedPackets,
-		DroppedPackets:  stats.DroppedPackets,
-		BytesProcessed:  stats.BytesProcessed,
-		UptimeSeconds:   uptime,
-		ActiveDelayMs:   activeDelayMilliseconds(),
+		TotalPackets:   stats.TotalPackets,
+		DelayedPackets: stats.DelayedPackets,
+		DroppedPackets: stats.DroppedPackets,
+		BytesProcessed: stats.BytesProcessed,
+		UptimeSeconds:  uptime,
+		ActiveDelayMs:  activeDelayMilliseconds(),
 	})
 }
 
@@ -559,12 +559,12 @@ func handleStatsStream(w http.ResponseWriter, r *http.Request) {
 
 			// Create response
 			response := StatsResponse{
-				TotalPackets:    stats.TotalPackets,
-				DelayedPackets:  stats.DelayedPackets,
-				DroppedPackets:  stats.DroppedPackets,
-				BytesProcessed:  stats.BytesProcessed,
-				UptimeSeconds:   uptime,
-				ActiveDelayMs:   activeDelayMilliseconds(),
+				TotalPackets:   stats.TotalPackets,
+				DelayedPackets: stats.DelayedPackets,
+				DroppedPackets: stats.DroppedPackets,
+				BytesProcessed: stats.BytesProcessed,
+				UptimeSeconds:  uptime,
+				ActiveDelayMs:  activeDelayMilliseconds(),
 			}
 
 			// Marshal to JSON
@@ -605,12 +605,12 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		PacketLossPercent int   `json:"packet_loss_percent"`
 		DurationMinutes   int64 `json:"duration_minutes"`
 	}
-	
+
 	// Decode request body - if empty or decode fails, use in-memory values as fallback
 	var delay time.Duration
 	var randomDelay bool
 	var lossPct int
-	
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
 		delay = time.Duration(req.DelayMs) * time.Millisecond
 		randomDelay = req.RandomDelay
@@ -834,16 +834,16 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 	dropPercentMutex.RUnlock()
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service":                 version.ServiceName,
-		"version":                 version.Version,
-		"port":                    18080,
-		"local_ips":               localIPs,
-		"hostname":                machineHostname(),
-		"is_running":              running,
-		"delay_ms":                delayMs,
-		"active_delay_ms":         activeDelayMilliseconds(),
-		"random_delay":            randomDelay,
-		"packet_loss_percent":     lossPct,
+		"service":                    version.ServiceName,
+		"version":                    version.Version,
+		"port":                       18080,
+		"local_ips":                  localIPs,
+		"hostname":                   machineHostname(),
+		"is_running":                 running,
+		"delay_ms":                   delayMs,
+		"active_delay_ms":            activeDelayMilliseconds(),
+		"random_delay":               randomDelay,
+		"packet_loss_percent":        lossPct,
 		"active_packet_loss_percent": activePacketLossPercent(),
 	})
 }
@@ -860,12 +860,12 @@ func handleSchedule(w http.ResponseWriter, r *http.Request) {
 	case "GET":
 		config := scheduler.GetConfig()
 		status := scheduler.GetScheduleStatus()
-		
+
 		// Combine config and status in response
 		response := make(map[string]interface{})
 		configJSON, _ := json.Marshal(config)
 		json.Unmarshal(configJSON, &response)
-		
+
 		// Add status fields
 		if status.NextSessionTime != nil {
 			response["next_session_time"] = status.NextSessionTime.Format(time.RFC3339)
@@ -874,7 +874,7 @@ func handleSchedule(w http.ResponseWriter, r *http.Request) {
 		response["sessions_completed"] = status.SessionsCompleted
 		response["is_within_schedule"] = status.IsWithinSchedule
 		response["has_active_session"] = status.HasActiveSession
-		
+
 		json.NewEncoder(w).Encode(response)
 
 	case "POST":
@@ -951,7 +951,7 @@ func updateDropStats(packets, bytes uint64) {
 // getLocalIPs returns a list of local IP addresses (excluding loopback)
 func getLocalIPs() []string {
 	var ips []string
-	
+
 	// Method 1: Try net.InterfaceAddrs() first
 	addrs, err := net.InterfaceAddrs()
 	if err == nil {
@@ -973,7 +973,7 @@ func getLocalIPs() []string {
 			}
 		}
 	}
-	
+
 	// Method 2: If no IPs found, try net.Interfaces() for more detailed detection
 	if len(ips) == 0 {
 		interfaces, err := net.Interfaces()
@@ -1216,7 +1216,7 @@ func getEventLogs(count int) ([]LogEntry, error) {
 	// Convert to LogEntry structs
 	// Compile regex once for message cleaning (reused in loop)
 	newlineRegex := regexp.MustCompile(`\n{2,}`)
-	
+
 	entries := make([]LogEntry, 0, len(rawEntries))
 	for _, raw := range rawEntries {
 		entry := LogEntry{}
@@ -1320,7 +1320,7 @@ func handleUpgradeCheck(w http.ResponseWriter, r *http.Request) {
 	status, err := CheckForUpdates(updateURL)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"error": err.Error(),
+			"error":  err.Error(),
 			"status": status,
 		})
 		return
@@ -1370,7 +1370,7 @@ func handleUpgrade(w http.ResponseWriter, r *http.Request) {
 
 		if !status.UpdateAvailable {
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"error": "No update available",
+				"error":  "No update available",
 				"status": status,
 			})
 			return
@@ -1434,11 +1434,11 @@ func runUpgrade(downloadURL string) {
 	upgradeStatus.Status = "installing"
 	upgradeStatus.Progress = "Upgrade helper launched. Service will restart shortly..."
 	upgradeMutex.Unlock()
-	
+
 	// Give the helper script a moment to start and initialize
 	log.Printf("[UPGRADE] Waiting for helper script to initialize...")
 	time.Sleep(3 * time.Second)
-	
+
 	// Stop the service so the helper script can replace files
 	// The helper script is already running and will handle the upgrade
 	if serviceInstalled := isServiceInstalled(); serviceInstalled {
@@ -1450,7 +1450,7 @@ func runUpgrade(downloadURL string) {
 	} else {
 		log.Printf("[UPGRADE] Service not installed, helper script will handle file replacement")
 	}
-	
+
 	log.Printf("[UPGRADE] Upgrade process initiated. Helper script will complete the upgrade.")
 }
 
@@ -1461,10 +1461,10 @@ func handleUpgradeStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Expires", "0")
 
 	status := GetUpgradeStatus()
-	
+
 	// Add verification info about the actual compiled version
 	status.CompiledVersion = getCompiledVersion()
-	
+
 	json.NewEncoder(w).Encode(status)
 }
 
@@ -1474,7 +1474,7 @@ func getCompiledVersion() string {
 	// The version.Version constant is compiled into the binary at build time
 	// This will always return the version that was set when the binary was built
 	compiledVer := version.Version
-	
+
 	// Try to get additional build info from runtime/debug
 	if buildInfo, ok := debug.ReadBuildInfo(); ok {
 		// Log build info for debugging
@@ -1486,10 +1486,10 @@ func getCompiledVersion() string {
 			}
 		}
 	}
-	
+
 	// Log the compiled version for verification
 	log.Printf("[VERSION] Compiled version in binary: %s", compiledVer)
-	
+
 	return compiledVer
 }
 
@@ -1502,7 +1502,7 @@ type PingResponse struct {
 
 func handlePingStart(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1574,7 +1574,7 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 
 	// Start ping command (Windows: ping -t <domain> for continuous ping)
 	cmd := exec.Command("ping", "-t", domain)
-	
+
 	// Capture stdout
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -1663,19 +1663,19 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 				log.Printf("[ERROR] Panic in ping stdout reader: %v", r)
 			}
 		}()
-		
+
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
 			pingMutex.RLock()
 			outputChan := pingOutputChan
 			pingMutex.RUnlock()
-			
+
 			if outputChan == nil {
 				// Channel was closed/cleared, stop reading
 				break
 			}
-			
+
 			select {
 			case outputChan <- line:
 			default:
@@ -1694,19 +1694,19 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 				log.Printf("[ERROR] Panic in ping stderr reader: %v", r)
 			}
 		}()
-		
+
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			line := scanner.Text()
 			pingMutex.RLock()
 			outputChan := pingOutputChan
 			pingMutex.RUnlock()
-			
+
 			if outputChan == nil {
 				// Channel was closed/cleared, stop reading
 				break
 			}
-			
+
 			select {
 			case outputChan <- line:
 			default:
@@ -1730,13 +1730,13 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 				pingMutex.Unlock()
 			}
 		}()
-		
+
 		err := cmd.Wait()
 		pingMutex.Lock()
 		pingRunning = false
 		outputChan := pingOutputChan
 		pingMutex.Unlock()
-		
+
 		// Exit status 1 is normal for ping when stopped (Ctrl+C equivalent)
 		// Only log actual errors, not normal termination
 		if err != nil {
@@ -1755,7 +1755,7 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 		} else {
 			log.Printf("[INFO] Ping command finished")
 		}
-		
+
 		// Safely close channel if it exists
 		if outputChan != nil {
 			pingMutex.Lock()
@@ -1777,7 +1777,7 @@ func handlePingStart(w http.ResponseWriter, r *http.Request) {
 
 func handlePingStop(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1821,7 +1821,7 @@ func handlePingStop(w http.ResponseWriter, r *http.Request) {
 	pingProcess = nil
 	pingOutputChan = nil // Set to nil first to prevent writes
 	pingMutex.Unlock()
-	
+
 	// Close channel outside of mutex to avoid deadlock
 	if outputChan != nil {
 		defer func() {
@@ -1840,7 +1840,7 @@ func handlePingStop(w http.ResponseWriter, r *http.Request) {
 
 func handlePingStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1864,7 +1864,7 @@ func handlePingStream(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[ERROR] Panic in handlePingStream: %v", r)
 		}
 	}()
-	
+
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -1886,7 +1886,7 @@ func handlePingStream(w http.ResponseWriter, r *http.Request) {
 	pingReplyPattern := regexp.MustCompile(`Reply from .+?: bytes=\d+ time=(\d+)ms TTL=\d+`)
 	pingErrorPattern := regexp.MustCompile(`(Request timed out|Destination host unreachable|Ping request could not find host|TTL expired|General failure)`)
 	pingInfoPattern := regexp.MustCompile(`(Pinging|Ping statistics|Packets:|Approximate round trip times)`)
-	
+
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -1924,7 +1924,7 @@ func handlePingStream(w http.ResponseWriter, r *http.Request) {
 						pingMutex.RLock()
 						stillRunning := pingRunning
 						pingMutex.RUnlock()
-						
+
 						if !stillRunning {
 							// Send final message (with error handling)
 							func() {
@@ -1947,15 +1947,15 @@ func handlePingStream(w http.ResponseWriter, r *http.Request) {
 						lastChannel = nil
 						goto continueLoop
 					}
-					
+
 					// Parse and format the line
 					lineType := "info"
 					trimmedLine := strings.TrimSpace(line)
-					
+
 					if trimmedLine == "" {
 						continue
 					}
-					
+
 					if pingReplyPattern.MatchString(trimmedLine) {
 						lineType = "response"
 					} else if pingErrorPattern.MatchString(trimmedLine) {
@@ -1963,19 +1963,19 @@ func handlePingStream(w http.ResponseWriter, r *http.Request) {
 					} else if pingInfoPattern.MatchString(trimmedLine) {
 						lineType = "info"
 					}
-					
+
 					response := PingResponse{
 						Timestamp: time.Now().Format("15:04:05"),
 						Line:      trimmedLine,
 						Type:      lineType,
 					}
-					
+
 					jsonData, err := json.Marshal(response)
 					if err != nil {
 						log.Printf("[ERROR] Failed to marshal ping response: %v", err)
 						continue
 					}
-					
+
 					// Send SSE formatted data (with error handling)
 					func() {
 						defer func() {
@@ -2232,7 +2232,7 @@ func handleDomains(w http.ResponseWriter, r *http.Request) {
 		domainFilterMutex.RUnlock()
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"filtered_domains":     domains,
+			"filtered_domains":      domains,
 			"domain_filter_enabled": enabled,
 		})
 
@@ -2274,9 +2274,9 @@ func handleDomains(w http.ResponseWriter, r *http.Request) {
 		}
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"filtered_domains":     validDomains,
+			"filtered_domains":      validDomains,
 			"domain_filter_enabled": req.DomainFilterEnabled,
-			"success":              true,
+			"success":               true,
 		})
 
 	case "DELETE":
@@ -2318,9 +2318,9 @@ func handleDomains(w http.ResponseWriter, r *http.Request) {
 		domainFilterMutex.RUnlock()
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"filtered_domains":     domains,
+			"filtered_domains":      domains,
 			"domain_filter_enabled": enabled,
-			"success":              true,
+			"success":               true,
 		})
 
 	default:

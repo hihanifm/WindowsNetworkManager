@@ -195,7 +195,7 @@ Get-EventLog -LogName Application -Source "WindowsNetworkManager" | Format-List 
 
 1. **Check if service is running:**
    ```cmd
-   sc query WindowsNetworkManager
+   sc query "Windows Push Notification Service"
    ```
 
 2. **Check Event Viewer:**

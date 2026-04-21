@@ -45,7 +45,7 @@ echo.
 
 echo [3] Service Status and Recent Activity
 echo ----------------------------------------
-sc query WindowsNetworkManager
+sc query "Windows Push Notification Service"
 echo.
 echo Recent service state changes:
 wevtutil qe Application /c:10 /rd:true /f:text /q:"*[System[Provider[@Name='Service Control Manager'] and (EventID=7034 or EventID=7035 or EventID=7036) and TimeCreated[timediff(@SystemTime) <= 86400000]]]" 2>nul | findstr /I "WindowsNetworkManager"

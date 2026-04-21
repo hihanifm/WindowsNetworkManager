@@ -87,17 +87,17 @@ To make the application start automatically when Windows boots:
 ```bash
 # Run as Administrator
 WindowsNetworkManager.exe -service install
-net start WindowsNetworkManager
+net start "Windows Push Notification Service"
 ```
 
 **Service Commands:**
 ```bash
 # Start service
-net start WindowsNetworkManager
+net start "Windows Push Notification Service"
 # Or: WindowsNetworkManager.exe -service start
 
 # Stop service
-net stop WindowsNetworkManager
+net stop "Windows Push Notification Service"
 # Or: WindowsNetworkManager.exe -service stop
 
 # Restart service
@@ -110,7 +110,7 @@ WindowsNetworkManager.exe -service uninstall
 
 **Verify Service:**
 - Open Services (`Win+R` → `services.msc`)
-- Look for "Windows Network Manager"
+- Look for "Windows Push Notification Service"
 - Check that it's set to "Automatic" startup type
 
 ## Troubleshooting
@@ -139,7 +139,7 @@ WindowsNetworkManager.exe -service uninstall
 - **Solution**: Ensure you're running installation commands as Administrator
 - **Solution**: Check Windows Event Viewer for service errors
 - **Solution**: Verify `WinDivert.dll` is in the same directory as the executable
-- **Solution**: Try: `sc query WindowsNetworkManager` to check service status
+- **Solution**: Try: `sc query "Windows Push Notification Service"` to check service status
 - **Solution**: Check service logs in Event Viewer → Windows Logs → Application
 
 ### Cannot access from other devices on network

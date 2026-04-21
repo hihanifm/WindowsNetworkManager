@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Installing Windows Network Manager Service
+echo Installing Windows Push Notification Service
 echo ========================================
 echo.
 
@@ -28,7 +28,7 @@ if %ERRORLEVEL% EQU 0 (
     echo   start_service.bat
     echo.
     echo Or use:
-    echo   net start WindowsNetworkManager
+    echo   net start "Windows Push Notification Service"
     echo.
     echo Web interface will be available at:
     echo   http://localhost:18080

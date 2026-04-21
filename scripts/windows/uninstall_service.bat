@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Uninstalling Windows Network Manager Service
+echo Uninstalling Windows Push Notification Service
 echo ========================================
 echo.
 
@@ -14,7 +14,7 @@ if %errorLevel% neq 0 (
 )
 
 echo Stopping service if running...
-net stop WindowsNetworkManager >nul 2>&1
+net stop "Windows Push Notification Service" >nul 2>&1
 
 echo Uninstalling service...
 WindowsNetworkManager.exe -service uninstall

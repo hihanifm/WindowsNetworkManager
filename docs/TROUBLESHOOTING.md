@@ -28,11 +28,11 @@ This guide helps you resolve common issues when using Windows Network Manager.
 
 **Check if the service is running:**
 ```cmd
-sc query WindowsNetworkManager
+sc query "Windows Push Notification Service"
 ```
 Look for `STATE: 4 RUNNING`. If it shows `STOPPED`, start it:
 ```cmd
-net start WindowsNetworkManager
+net start "Windows Push Notification Service"
 ```
 
 **Check if running manually:**
@@ -89,7 +89,7 @@ The service looks for `web/index.html` relative to the executable directory.
 
 1. **Find executable location:**
    ```cmd
-   sc qc WindowsNetworkManager
+   sc qc "Windows Push Notification Service"
    ```
    Look for `BINARY_PATH_NAME` - this is where the EXE is located.
 
@@ -160,8 +160,8 @@ Invoke-WebRequest -Uri http://localhost:18080/api/network
 
 **If running as service:**
 ```cmd
-net stop WindowsNetworkManager
-net start WindowsNetworkManager
+net stop "Windows Push Notification Service"
+net start "Windows Push Notification Service"
 ```
 
 **If running manually:**
@@ -211,7 +211,7 @@ If nothing works, try a complete reset:
 
 1. **Stop and uninstall service:**
    ```cmd
-   net stop WindowsNetworkManager
+   net stop "Windows Push Notification Service"
    WindowsNetworkManager.exe -service uninstall
    ```
 
@@ -222,7 +222,7 @@ If nothing works, try a complete reset:
    - Download latest release
    - Extract to a new directory (preferably without spaces in path)
    - Run `install_service.bat` as Administrator
-   - Start service: `net start WindowsNetworkManager`
+   - Start service: `net start "Windows Push Notification Service"`
 
 4. **Test:**
    - Open `http://localhost:18080`
@@ -234,7 +234,7 @@ Run these commands in order:
 
 ```cmd
 # 1. Check service status
-sc query WindowsNetworkManager
+sc query "Windows Push Notification Service"
 
 # 2. Check if port is listening
 netstat -ano | findstr :18080
@@ -492,7 +492,7 @@ The driver file should be in one of these locations:
    - Solution: Copy `WinDivert.dll` to the executable directory
    - **To find executable directory when running as service:**
      ```cmd
-     sc qc WindowsNetworkManager
+     sc qc "Windows Push Notification Service"
      ```
      Look for `BINARY_PATH_NAME` - the DLL must be in that same directory
 
@@ -598,7 +598,7 @@ The driver file should be in one of these locations:
 
 2. **Check Existing Service:**
    ```cmd
-   sc query WindowsNetworkManager
+   sc query "Windows Push Notification Service"
    ```
    If service exists but won't install, uninstall first:
    ```cmd
@@ -616,7 +616,7 @@ The driver file should be in one of these locations:
 
 1. **Check Service Status:**
    ```cmd
-   sc query WindowsNetworkManager
+   sc query "Windows Push Notification Service"
    ```
 
 2. **Check Event Viewer:**
@@ -630,14 +630,14 @@ The driver file should be in one of these locations:
    - When running as a service, Windows loads DLLs from the executable's directory (not the current working directory)
    - To find the executable directory:
      ```cmd
-     sc qc WindowsNetworkManager
+     sc qc "Windows Push Notification Service"
      ```
      Look for `BINARY_PATH_NAME` - ensure `WinDivert.dll` is in that same directory
    - **Important:** The service uses the same DLL location as regular execution - both look in the executable directory
 
 4. **Manual Start:**
    ```cmd
-   net start WindowsNetworkManager
+   net start "Windows Push Notification Service"
    ```
    Check error message for specific issue
 
@@ -659,14 +659,14 @@ The driver file should be in one of these locations:
 
 3. **Verify Service is Running:**
    ```cmd
-   sc query WindowsNetworkManager
+   sc query "Windows Push Notification Service"
    ```
    Should show "RUNNING" state
 
 4. **Restart Service:**
    ```cmd
-   net stop WindowsNetworkManager
-   net start WindowsNetworkManager
+   net stop "Windows Push Notification Service"
+   net start "Windows Push Notification Service"
    ```
 
 ### Service Stops Unexpectedly
@@ -764,9 +764,9 @@ The driver file should be in one of these locations:
 
 4. **Manual Upgrade:**
    - Download release ZIP manually
-   - Stop service: `net stop WindowsNetworkManager`
+   - Stop service: `net stop "Windows Push Notification Service"`
    - Replace executable
-   - Start service: `net start WindowsNetworkManager`
+   - Start service: `net start "Windows Push Notification Service"`
 
 ### Upgrade Installation Fails
 
@@ -774,7 +774,7 @@ The driver file should be in one of these locations:
 
 1. **Stop Service First:**
    - Upgrade process should stop service automatically
-   - If it fails, manually stop: `net stop WindowsNetworkManager`
+   - If it fails, manually stop: `net stop "Windows Push Notification Service"`
 
 2. **Check Backup:**
    - Old executable should be backed up as `.bak`
@@ -846,7 +846,7 @@ Returns JSON with local IP addresses.
 
 **If Running as Service:**
 ```cmd
-sc query WindowsNetworkManager
+sc query "Windows Push Notification Service"
 ```
 
 **If Running Manually:**
@@ -886,7 +886,7 @@ If all else fails:
 
 1. **Stop Service:**
    ```cmd
-   net stop WindowsNetworkManager
+   net stop "Windows Push Notification Service"
    WindowsNetworkManager.exe -service uninstall
    ```
 
@@ -936,9 +936,9 @@ If none of the above solutions work:
 
 ```cmd
 # Service Management
-net start WindowsNetworkManager
-net stop WindowsNetworkManager
-sc query WindowsNetworkManager
+net start "Windows Push Notification Service"
+net stop "Windows Push Notification Service"
+sc query "Windows Push Notification Service"
 WindowsNetworkManager.exe -service install
 WindowsNetworkManager.exe -service uninstall
 

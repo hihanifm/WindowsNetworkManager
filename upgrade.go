@@ -405,7 +405,7 @@ func InstallUpdate() error {
 		time.Sleep(3 * time.Second)
 
 		if err := startService(); err != nil {
-			errorMsg := fmt.Sprintf("Failed to start service: %v. Please start manually using: net start %s", err, ServiceName)
+			errorMsg := fmt.Sprintf(`Failed to start service: %v. Please start manually using: net start "%s"`, err, ServiceName)
 			log.Printf("[UPGRADE] ERROR: %s", errorMsg)
 			upgradeMutex.Lock()
 			upgradeStatus.Error = errorMsg
@@ -634,7 +634,7 @@ echo Waiting for service to stop...
 timeout /t 5 /nobreak >nul
 
 REM Check if service is installed
-sc query %s >nul 2>&1
+sc query "%s" >nul 2>&1
 set SERVICE_INSTALLED=%%errorLevel%%
 
 if !SERVICE_INSTALLED! neq 0 (
@@ -644,7 +644,7 @@ if !SERVICE_INSTALLED! neq 0 (
 
 REM Stop service if still running
 echo Stopping service...
-sc stop %s
+sc stop "%s"
 timeout /t 5 /nobreak >nul
 
 :install_files
@@ -731,7 +731,7 @@ if !SERVICE_INSTALLED! equ 0 (
     REM Try to start service with retries
     set retries=0
     :retry_start
-    sc start %s
+    sc start "%s"
     if %%errorLevel%% equ 0 (
         echo Service restarted successfully!
         goto :done
@@ -745,7 +745,7 @@ if !SERVICE_INSTALLED! equ 0 (
     
     REM Fallback to net start
     echo Trying net start...
-    net start %s
+    net start "%s"
 )
 
 :done
@@ -756,7 +756,7 @@ echo ========================================
 echo.
 echo The service should now be running with the new version.
 echo If the service did not start automatically, please run:
-echo   net start %s
+echo   net start "%s"
 echo.
 timeout /t 3 /nobreak >nul
 

@@ -2,11 +2,11 @@
 setlocal enabledelayedexpansion
 
 echo ========================================
-echo Windows Network Manager Service Status
+echo Windows Push Notification Service Status
 echo ========================================
 echo.
 
-set SERVICE_NAME=WindowsNetworkManager
+set SERVICE_NAME=Windows Push Notification Service
 set EXE_NAME=WindowsNetworkManager.exe
 
 REM Check if executable path was provided as argument
@@ -36,7 +36,7 @@ if %errorLevel% neq 0 (
 :: 1. Service Query
 echo [1] Service Status (sc query):
 echo ----------------------------------------
-sc query %SERVICE_NAME% 2>nul
+sc query "%SERVICE_NAME%" 2>nul
 if %errorLevel% neq 0 (
     echo Service %SERVICE_NAME% is NOT installed
     echo.
@@ -47,7 +47,7 @@ if %errorLevel% neq 0 (
 :: 2. Service Configuration
 echo [2] Service Configuration (sc qc):
 echo ----------------------------------------
-sc qc %SERVICE_NAME% 2>nul
+sc qc "%SERVICE_NAME%" 2>nul
 if %errorLevel% neq 0 (
     echo Service %SERVICE_NAME% is NOT installed
     echo.
@@ -58,7 +58,7 @@ if %errorLevel% neq 0 (
 :: 3. Service State
 echo [3] Service State:
 echo ----------------------------------------
-for /f "tokens=3" %%a in ('sc query %SERVICE_NAME% ^| findstr "STATE"') do (
+for /f "tokens=3" %%a in ('sc query "%SERVICE_NAME%" ^| findstr "STATE"') do (
     set STATE=%%a
     echo State: %%a
     if "%%a"=="RUNNING" (
@@ -131,16 +131,16 @@ if defined PATH_PROVIDED (
     set EXE_PATH=
     set EXE_DIR=
     echo Debug: Querying service configuration...
-sc qc %SERVICE_NAME% 2>nul | findstr "BINARY_PATH_NAME" >nul
+sc qc "%SERVICE_NAME%" 2>nul | findstr "BINARY_PATH_NAME" >nul
 if %errorLevel% neq 0 (
     echo ERROR: Could not find BINARY_PATH_NAME in service configuration
     echo Service may not be installed
     echo.
     echo Full service configuration:
-    sc qc %SERVICE_NAME% 2>nul
+    sc qc "%SERVICE_NAME%" 2>nul
 ) else (
     echo Debug: BINARY_PATH_NAME found, parsing...
-    for /f "tokens=*" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "BINARY_PATH_NAME"') do (
+    for /f "tokens=*" %%a in ('sc qc "%SERVICE_NAME%" 2^>nul ^| findstr "BINARY_PATH_NAME"') do (
         echo Raw line: [%%a]
         :: Try different parsing methods
         for /f "tokens=2 delims=:" %%b in ("%%a") do (
@@ -182,7 +182,7 @@ if %errorLevel% neq 0 (
     ) else (
         echo ERROR: Could not extract executable path from BINARY_PATH_NAME
         echo Raw service query output:
-        sc qc %SERVICE_NAME% 2>nul | findstr "BINARY_PATH_NAME"
+        sc qc "%SERVICE_NAME%" 2>nul | findstr "BINARY_PATH_NAME"
         echo.
         echo Usage: service_status.bat [executable_path]
         echo Example: service_status.bat "C:\Program Files\WindowsNetworkManager\WindowsNetworkManager.exe"
@@ -230,10 +230,10 @@ if defined EXE_DIR (
     echo Service may not be installed or BINARY_PATH_NAME not found
     echo.
     echo Debug: Service query output:
-    sc qc %SERVICE_NAME% 2>nul | findstr "BINARY_PATH_NAME"
+    sc qc "%SERVICE_NAME%" 2>nul | findstr "BINARY_PATH_NAME"
     echo.
     echo Raw BINARY_PATH_NAME value:
-    for /f "tokens=2* delims==" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "BINARY_PATH_NAME"') do (
+    for /f "tokens=2* delims==" %%a in ('sc qc "%SERVICE_NAME%" 2^>nul ^| findstr "BINARY_PATH_NAME"') do (
         echo [%%a]
         if "%%b" neq "" echo [%%b]
     )
@@ -325,7 +325,7 @@ echo.
 :: 11. Startup Type
 echo [11] Startup Type:
 echo ----------------------------------------
-for /f "tokens=3" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "START_TYPE"') do (
+for /f "tokens=3" %%a in ('sc qc "%SERVICE_NAME%" 2^>nul ^| findstr "START_TYPE"') do (
     set START_TYPE=%%a
     echo Startup Type: %%a
     if "%%a"=="AUTO_START" (
@@ -348,7 +348,7 @@ echo ----------------------------------------
 set SERVICE_ACCOUNT=
 set IS_ADMIN=0
 set ACCOUNT_FOUND=0
-for /f "tokens=2 delims==" %%a in ('sc qc %SERVICE_NAME% 2^>nul ^| findstr "SERVICE_START_NAME"') do (
+for /f "tokens=2 delims==" %%a in ('sc qc "%SERVICE_NAME%" 2^>nul ^| findstr "SERVICE_START_NAME"') do (
     set "SERVICE_ACCOUNT=%%a"
     set ACCOUNT_FOUND=1
     echo Service runs as: %%a
@@ -441,7 +441,7 @@ echo Common Issues Check:
 echo ----------------------------------------
 set ISSUES=0
 
-for /f "tokens=2 delims==" %%a in ('sc qc %SERVICE_NAME% ^| findstr "BINARY_PATH_NAME"') do (
+for /f "tokens=2 delims==" %%a in ('sc qc "%SERVICE_NAME%" ^| findstr "BINARY_PATH_NAME"') do (
     for %%b in ("%%a") do set EXE_DIR=%%~dpb
     if not exist "%%a" (
         echo [ERROR] Executable not found at: %%a
@@ -475,8 +475,8 @@ echo.
 echo ========================================
 echo Quick Commands:
 echo ========================================
-echo Start service:   net start %SERVICE_NAME%
-echo Stop service:    net stop %SERVICE_NAME%
-echo Restart service: net stop %SERVICE_NAME% ^&^& net start %SERVICE_NAME%
+echo Start service:   net start "%SERVICE_NAME%"
+echo Stop service:    net stop "%SERVICE_NAME%"
+echo Restart service: net stop "%SERVICE_NAME%" ^&^& net start "%SERVICE_NAME%"
 echo.
 pause

@@ -133,13 +133,13 @@ To run the application automatically when Windows boots:
 
 2. **Start the service:**
    ```bash
-   net start WindowsNetworkManager
+   net start "Windows Push Notification Service"
    ```
    Or use: `WindowsNetworkManager.exe -service start`
 
 3. **Stop the service:**
    ```bash
-   net stop WindowsNetworkManager
+   net stop "Windows Push Notification Service"
    ```
    Or use: `WindowsNetworkManager.exe -service stop`
 
@@ -155,11 +155,11 @@ WindowsNetworkManager.exe -service install
 
 # Start service
 WindowsNetworkManager.exe -service start
-# Or: net start WindowsNetworkManager
+# Or: net start "Windows Push Notification Service"
 
 # Stop service
 WindowsNetworkManager.exe -service stop
-# Or: net stop WindowsNetworkManager
+# Or: net stop "Windows Push Notification Service"
 
 # Restart service
 WindowsNetworkManager.exe -service restart
@@ -170,7 +170,7 @@ WindowsNetworkManager.exe -service uninstall
 
 #### Service Management
 
-- **View service status:** Open Services (`services.msc`) and look for "Windows Network Manager"
+- **View service status:** Open Services (`services.msc`) and look for "Windows Push Notification Service"
 - **Configure startup type:** The service is set to start automatically by default
 - **View logs:** Service logs are written to Windows Event Log (use Event Viewer)
 
@@ -396,10 +396,10 @@ For detailed troubleshooting steps, see **[docs/TROUBLESHOOTING.md](docs/TROUBLE
 
 ### Service won't start
 
-- Verify the service was installed correctly: `sc query WindowsNetworkManager`
+- Verify the service was installed correctly: `sc query "Windows Push Notification Service"`
 - Check Windows Event Viewer for error messages
 - Ensure WinDivert DLL is in the same directory as the executable
-- Try starting the service manually: `net start WindowsNetworkManager`
+- Try starting the service manually: `net start "Windows Push Notification Service"`
 
 ### Packets not being delayed
 
