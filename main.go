@@ -269,6 +269,9 @@ func main() {
 	http.HandleFunc("/api/domains", handleDomains)
 	// Support trailing slash and subpaths (e.g. DELETE /api/domains/<domain>)
 	http.HandleFunc("/api/domains/", handleDomains)
+	// Backward-compatible alias (some clients use singular)
+	http.HandleFunc("/api/domain", handleDomains)
+	http.HandleFunc("/api/domain/", handleDomains)
 
 	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
