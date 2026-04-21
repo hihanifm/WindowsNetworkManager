@@ -187,8 +187,9 @@ async function loadConfig() {
     try {
         const response = await fetch('/api/config');
         const config = await response.json();
-        document.getElementById('delay').value = config.delay_ms || 0;
-        document.getElementById('randomDelay').checked = config.random_delay || false;
+        document.getElementById('delay').value = config.delay_ms != null ? config.delay_ms : 300;
+        // Default to enabled unless backend explicitly says false.
+        document.getElementById('randomDelay').checked = config.random_delay !== false;
         const pl = document.getElementById('packetLoss');
         if (pl) pl.value = config.packet_loss_percent != null ? config.packet_loss_percent : 0;
         isServiceRunning = config.is_running || false;
