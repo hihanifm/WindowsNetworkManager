@@ -75,6 +75,13 @@ func startWebServer(port int) {
 }
 
 func serveIndex(w http.ResponseWriter, r *http.Request) {
+	// Only serve the UI at "/" (and "/index.html"). For any unknown path,
+	// return 404 so API clients don't receive HTML unexpectedly.
+	if r.URL.Path != "/" && r.URL.Path != "/index.html" {
+		http.NotFound(w, r)
+		return
+	}
+
 	// Get executable directory to ensure we serve files relative to the binary location
 	exePath, err := os.Executable()
 	if err == nil {

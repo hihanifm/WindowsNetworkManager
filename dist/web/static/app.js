@@ -6,6 +6,43 @@ let pingEventSource = null;
 let isPingRunning = false;
 let pingStopRequested = false; // Flag to prevent multiple stop requests on unload
 
+async function fetchJsonOrThrow(url, options) {
+    const response = await fetch(url, options);
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const bodyText = await response.text();
+
+    const parseJsonSafely = () => {
+        try {
+            return JSON.parse(bodyText || 'null');
+        } catch (e) {
+            const snippet = (bodyText || '').slice(0, 200).replace(/\s+/g, ' ').trim();
+            const hint = snippet.toLowerCase().startsWith('<!doctype') || snippet.toLowerCase().startsWith('<html')
+                ? ' (received HTML, not JSON — is the backend running and serving /api/*?)'
+                : '';
+            throw new Error(`Response was not valid JSON${hint}. First bytes: "${snippet}"`);
+        }
+    };
+
+    if (!response.ok) {
+        if (contentType.includes('application/json')) {
+            const errJson = parseJsonSafely();
+            throw new Error(errJson?.error || `HTTP ${response.status} ${response.statusText}`);
+        }
+        const snippet = (bodyText || '').slice(0, 200).replace(/\s+/g, ' ').trim();
+        throw new Error(`HTTP ${response.status} ${response.statusText}. First bytes: "${snippet}"`);
+    }
+
+    if (!contentType.includes('application/json')) {
+        const snippet = (bodyText || '').slice(0, 200).replace(/\s+/g, ' ').trim();
+        const hint = snippet.toLowerCase().startsWith('<!doctype') || snippet.toLowerCase().startsWith('<html')
+            ? ' (received HTML, not JSON — is the backend running and serving /api/*?)'
+            : '';
+        throw new Error(`Expected JSON but got "${contentType || 'unknown'}"${hint}. First bytes: "${snippet}"`);
+    }
+
+    return parseJsonSafely();
+}
+
 // Load current configuration on page load
 window.addEventListener('DOMContentLoaded', () => {
     loadMachineIdentity();
@@ -1331,8 +1368,7 @@ let domainFilterEnabled = false;
 
 async function loadDomainFilter() {
     try {
-        const response = await fetch('/api/domains');
-        const data = await response.json();
+        const data = await fetchJsonOrThrow('/api/domains');
         filteredDomainsList = data.filtered_domains || [];
         domainFilterEnabled = data.domain_filter_enabled || false;
         
@@ -1401,7 +1437,7 @@ async function saveDomainFilter() {
     try {
         const enabled = document.getElementById('domainFilterEnabled').checked;
         
-        const response = await fetch('/api/domains', {
+        const data = await fetchJsonOrThrow('/api/domains', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -1411,13 +1447,7 @@ async function saveDomainFilter() {
                 domain_filter_enabled: enabled
             })
         });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to save domain filter');
-        }
-        
-        const data = await response.json();
+
         filteredDomainsList = data.filtered_domains || [];
         domainFilterEnabled = data.domain_filter_enabled || false;
         updateDomainList();

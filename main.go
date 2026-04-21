@@ -305,6 +305,13 @@ func main() {
 }
 
 func serveIndex(w http.ResponseWriter, r *http.Request) {
+	// http.HandleFunc("/") registers a catch-all handler in Go's default mux.
+	// Only serve the UI at the root path; unknown paths should 404 (especially /api/*),
+	// so clients don't accidentally receive HTML when expecting JSON.
+	if r.URL.Path != "/" && r.URL.Path != "/index.html" {
+		http.NotFound(w, r)
+		return
+	}
 	http.ServeFile(w, r, "./web/index.html")
 }
 
